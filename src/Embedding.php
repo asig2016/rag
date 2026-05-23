@@ -704,11 +704,11 @@ class Embedding
 	 * @throws Api\Db\Exception\InvalidSql
 	 */
 	public function search(string $pattern, $app=null, int $start=0, int $num_rows=50, bool $return_all=false,
-	                       string $order='default', float $max_distance=.4, float $min_relevance=0.05) : array
+	                       string $order='default', float $max_distance=.4, float $min_relevance=0.05, ?array $app_ids=null) : array
 	{
 		if (!$this->client)
 		{
-			return $this->searchFulltext($pattern, $app, $start, $num_rows, $return_all, $order);
+			return $this->searchFulltext($pattern, $app, $start, $num_rows, $return_all, $order,0.05, null, $app_ids);
 		}
 		// quick/dump approach for merging: always query from start=0, $start+$num_rows rows, and then slice
 		$embedding_matches = $this->searchEmbeddings($pattern, $app, 0, $start+$num_rows, $return_all, $order, $max_distance);
@@ -795,12 +795,13 @@ class Embedding
 	 * *  false: only return distance value
 	 * @param string $order one of "default", "distance", "relevance" or "modified", optional with ASC or DESC suffix
 	 * @param float $max_distance default .4
+	 * @param array $app_ids:  Optionally limit the search to these specific app ids
 	 * @return float[] int id => float distance pairs for non-empty and string $app, empty $app or array we return string "$app:$id"
 	 * @throws Api\Db\Exception
 	 * @throws Api\Db\Exception\InvalidSql
 	 */
 	public function searchEmbeddings(string $pattern, $app=null, int $start=0, int $num_rows=50, bool $return_all=false,
-	                                 string $order='default', float $max_distance=.4) : array
+	                                 string $order='default', float $max_distance=.4, ?array $app_ids=null) : array
 	{
 		// we remove boolean mode fulltext operators
 		if (preg_match(self::BOOLEAN_MODE_OPERATORS_PREG, $pattern))
@@ -848,7 +849,7 @@ class Embedding
 		$id_distance = [];
 		foreach($this->db->select(self::TABLE, 'SQL_CALC_FOUND_ROWS '.implode(',', $cols),
 			$app ? [self::EMBEDDING_APP => $app,] : self::EMBEDDING_APP.'<>'.$this->db->quote(self::EMBEDDING_CACHE),
-			__LINE__, __FILE__, $start, 'HAVING distance<'.$max_distance.' ORDER BY '.$order, self::APP, $num_rows,
+			__LINE__, __FILE__, $start, 'HAVING distance<'.$max_distance.($app_ids ? ' AND '.self::EMBEDDING_APP_ID .' IN ('.implode(',',$app_ids).')' : '' ).' ORDER BY '.$order, self::APP, $num_rows,
 			$return_all ? ' LEFT JOIN '.self::FULLTEXT_TABLE.' ON '.self::EMBEDDING_APP.'='.self::FULLTEXT_APP.
 			' AND '.self::EMBEDDING_APP_ID.'='.self::FULLTEXT_APP_ID : '') as $row)
 		{
@@ -908,12 +909,13 @@ class Embedding
 	 * @param float $min_relevance default 0.05 = 5% of highest relevance
 	 * @param ?string $mode default null, check for BOOLEAN mode operators in $pattern: +-<>()~*",
 	 *  or 'IN BOOLEAN MODE', 'IN NATURAL LANGUAGE MODE', 'WITH QUERY EXPANSION'
+	 * @param array $app_ids:  Optionally limit the search to these specific app ids
 	 * @return float[] int id => float relevance pairs for non-empty and string $app, empty $app or array we return string "$app:$id"
 	 * @throws Api\Db\Exception
 	 * @throws Api\Db\Exception\InvalidSql
 	 */
 	public function searchFulltext(string $pattern, $app=null, int $start=0, int $num_rows=50, bool $return_all=false,
-	                               string $order='default', float $min_relevance=0.05, ?string $mode=null) : array
+	                               string $order='default', float $min_relevance=0.05, ?string $mode=null, ?array $app_ids=null) : array
 	{
 		// To find word(s) with a dash inside e.g. domain-names or ending with one (gives a FT syntax error!),
 		// we must NOT use boolean mode, but natural language mode.
@@ -968,7 +970,7 @@ class Embedding
 			}
 			$id_relevance = [];
 			foreach ($this->db->select(self::FULLTEXT_TABLE, 'SQL_CALC_FOUND_ROWS ' . implode(',', $cols),
-				($app ? [self::FULLTEXT_APP => $app] : []) + [$match . ' > '.$min_relevance],
+				($app ? [self::FULLTEXT_APP => $app] : []) + [$match . ' > '.$min_relevance] + ($app_ids ? [self::FULLTEXT_APP_ID .' IN ('.implode(',',$app_ids).')'] : [] ),
 				__LINE__, __FILE__, $start, 'ORDER BY '.$order, self::APP, $num_rows) as $row)
 			{
 				if ($row['relevance'] < $min_relevance)
