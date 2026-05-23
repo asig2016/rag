@@ -1028,12 +1028,13 @@ class Embedding
 	 * @param float $min_relevance default 0.05 = 5% of highest relevance
 	 * @param ?string $mode default null, check for BOOLEAN mode operators in $pattern: +-<>()~*",
 	 *  or 'IN BOOLEAN MODE', 'IN NATURAL LANGUAGE MODE', 'WITH QUERY EXPANSION'
+	 * @param array $app_ids:  Optionally limit the the search to these specific app ids
 	 * @return float[] int id => float relevance pairs for non-empty and string $app, empty $app or array we return string "$app:$id"
 	 * @throws Api\Db\Exception
 	 * @throws Api\Db\Exception\InvalidSql
 	 */
 	public function searchFulltext(string $pattern, $app=null, int $start=0, int $num_rows=50, bool $return_all=false,
-	                               string $order='default', float $min_relevance=0.05, ?string $mode=null) : array
+	                               string $order='default', float $min_relevance=0.05, ?string $mode=null, ?array $app_ids=null) : array
 	{
 		// To find word(s) with a dash inside e.g. domain-names or ending with one (gives a FT syntax error!),
 		// we must NOT use boolean mode, but natural language mode.
@@ -1088,7 +1089,7 @@ class Embedding
 			}
 			$id_relevance = [];
 			foreach ($this->db->select(self::FULLTEXT_TABLE, 'SQL_CALC_FOUND_ROWS ' . implode(',', $cols),
-				($app ? [self::FULLTEXT_APP => $app] : []) + [$match . ' > '.$min_relevance],
+				($app ? [self::FULLTEXT_APP => $app] : []) + [$match . ' > '.$min_relevance] + ($app_ids ? [self::FULLTEXT_APP_ID .' IN ('.implode(',',$app_ids).')'] : [] ),
 				__LINE__, __FILE__, $start, 'ORDER BY '.$order, self::APP, $num_rows) as $row)
 			{
 				if ($row['relevance'] < $min_relevance)
