@@ -559,33 +559,32 @@ class Embedding
 							// fulltext index or RAG/embeddings
 							if ($fulltext)
 							{
-								$extra = $extra ? array_values(array_filter(array_map('trim', $extra), static function ($v) {
+								$extra_ft = $extra ? array_values(array_filter(array_map('trim', $extra), static function ($v) {
 									return $v && strlen((string)$v) > 3;
 								})) : null;
-								if (!$extra || count($extra) <= 1)
+								if (!$extra_ft || count($extra_ft) <= 1)
 								{
-									$extra = $extra ? $extra[0] : null;
+									$extra_ft = $extra_ft ? $extra_ft[0] : null;
 								}
 								else
 								{
-									$extra = json_encode($extra,
+									$extra_ft = json_encode($extra_ft,
 										JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_IGNORE | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_LINE_TERMINATORS);
 								}
 								$this->db->insert(self::FULLTEXT_TABLE, [
 									self::FULLTEXT_TITLE => $title ?: null,
 									self::FULLTEXT_DESCRIPTION => $description ?: null,
-									self::FULLTEXT_EXTRA => $extra,
+									self::FULLTEXT_EXTRA => $extra_ft,
 									self::FULLTEXT_MODIFIED => $modified,
 								], [
 									self::FULLTEXT_APP => $app,
 									self::FULLTEXT_APP_ID => $id,
 								], __LINE__, __FILE__, self::APP);
-								continue;
+								//continue;
 							}
 							if (self::$minimize_chunks)
 							{
-								$chunks = self::chunkSplit($title . "\n" . $description .
-									($extra ? "\n" . implode("\n", $extra) : ""));
+								$chunks = self::chunkSplit($title . "\n" . $description.($extra ? "\n" . implode("\n", $extra) : ""));
 							}
 							else
 							{
