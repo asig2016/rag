@@ -474,7 +474,6 @@ class Embedding
 				$response = $this->client->embeddings()->create([
 					'model' => self::$model,
 					'input' => $chunks,
-					'dimensions' => 1024
 				]);
 			}
 			catch (\Exception $e)   // JsonException of unsure namespace, therefore catch them all
@@ -485,7 +484,6 @@ class Embedding
 					$response = $this->client->embeddings()->create([
 						'model' => self::$model,
 						'input' => json_decode(json_encode($chunks, JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR), true),
-						'dimensions' => 1024
 					]);
 					unset($e);
 				}
@@ -1081,7 +1079,6 @@ class Embedding
 		$response = $this->client->embeddings()->create([
 			'model' => self::$model,
 			'input' => [$pattern],
-			'dimensions' => 1024
 		]);
 		$plugin = ucfirst(__CLASS__.'\\'.ucfirst($app));
 		$plugin = new $plugin();
