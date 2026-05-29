@@ -196,7 +196,7 @@ class Embedding
 		self::$chunk_overlap = $config['chunk_overlap'] ?? 50;
 		self::$model = $config['embedding_model'] ?? 'bge-m3';
 		self::$minimize_chunks = ($config['minimize_chunks'] ?? 'yes') !== 'no';
-		self::$max_runtime = $config['async_maxruntime'] ?? 285;
+		self::$max_runtime = (int) $config['async_maxruntime'] ?? 285;
 
 		$custom_times = [];
 		foreach (['year', 'month', 'day', 'dow', 'hour', 'min'] as $key) {
@@ -868,7 +868,7 @@ class Embedding
 		$id_distance = [];
 		foreach($this->db->select(self::TABLE, 'SQL_CALC_FOUND_ROWS '.implode(',', $cols),
 			$app ? [self::EMBEDDING_APP => $app,] : self::EMBEDDING_APP.'<>'.$this->db->quote(self::EMBEDDING_CACHE),
-			__LINE__, __FILE__, $start, 'HAVING distance<'.$max_distance.($app_ids ? ' '.self::EMBEDDING_APP_ID .' IN ('.implode(',',$app_ids).')' : '' ).' ORDER BY '.$order, self::APP, $num_rows,
+			__LINE__, __FILE__, $start, 'HAVING distance<'.$max_distance.($app_ids ? ' AND '.self::EMBEDDING_APP_ID .' IN ('.implode(',',$app_ids).')' : '' ).' ORDER BY '.$order, self::APP, $num_rows,
 			$return_all ? ' LEFT JOIN '.self::FULLTEXT_TABLE.' ON '.self::EMBEDDING_APP.'='.self::FULLTEXT_APP.
 			' AND '.self::EMBEDDING_APP_ID.'='.self::FULLTEXT_APP_ID : '') as $row)
 		{
