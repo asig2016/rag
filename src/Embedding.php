@@ -492,13 +492,13 @@ class Embedding
 					throw $e;
 				}
 			}
-			foreach($response->embeddings as $n => $embedding)
+			foreach ($response->embeddings as $n => $embedding)
 			{
-				foreach($responses as &$response)
+				foreach ($responses as &$response)
 				{
 					if ($response->chunk === $chunks[$n])
 					{
-						$response->embedding = $embedding->embedding;
+						$response->embedding = array_slice($embedding->embedding, 0, 1024);
 						break;
 					}
 				}
