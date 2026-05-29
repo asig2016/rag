@@ -500,7 +500,7 @@ class Embedding
 
 				foreach ($responses as $i => $chunkResponse)
 				{
-					if ($chunkResponse->n === $key)
+					if ((string)$chunkResponse->n === (string)$key)
 					{
 						$responses[$i]->embedding = array_slice($embedding->embedding, 0, 1024);
 						break;
