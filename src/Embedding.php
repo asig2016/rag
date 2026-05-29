@@ -494,13 +494,15 @@ class Embedding
 			}
 			foreach ($response->embeddings as $n => $embedding)
 			{
-				$vector1024 = array_slice($embedding->embedding, 0, 1024);
+				$key = $chunkKeys[$n] ?? null;
+
+				if ($key === null) continue;
 
 				foreach ($responses as $i => $chunkResponse)
 				{
-					if ($chunkResponse->chunk === $chunks[$n])
+					if ($chunkResponse->n === $key)
 					{
-						$responses[$i]->embedding = $vector1024;
+						$responses[$i]->embedding = array_slice($embedding->embedding, 0, 1024);
 						break;
 					}
 				}
