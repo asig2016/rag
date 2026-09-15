@@ -23,12 +23,23 @@ class Embedding
 	const TABLE = 'egw_rag';
 	const EMBEDDING_UPDATED = 'rag_updated';
 	const EMBEDDING_APP = 'rag_app';
-	const EMBEDDING_CACHE = '*cache*';  // used as EMBEDDING_APP for cached embeddings
+	const EMBEDDING_CACHE = '*cache*';  // EMBEDDING_APP of cached embeddings before they moved to CACHE_TABLE, only used in the update
 	const EMBEDDING_APP_ID = 'rag_app_id';
 	const EMBEDDING_CHUNK = 'rag_chunk';
 	const EMBEDDING = 'rag_embedding';
 	const EMBEDDING_MODIFIED = 'rag_updated';
 	const EMBEDDING_HASH = 'rag_hash';
+	/**
+	 * Part of an entry the chunks belong to: '' = the entry's own text, later e.g. "reply:<id>" or "file:<fs_id>"
+	 */
+	const EMBEDDING_PART = 'rag_part';
+	/**
+	 * Embeddings of search patterns, kept apart from egw_rag so they are not part of its vector index
+	 */
+	const CACHE_TABLE = 'egw_rag_cache';
+	const CACHE_HASH = 'rc_hash';
+	const CACHE_EMBEDDING = 'rc_embedding';
+	const CACHE_UPDATED = 'rc_updated';
 	const FULLTEXT_TABLE = 'egw_rag_fulltext';
 	const FULLTEXT_UPDATED = 'ft_updated';
 	const FULLTEXT_APP = 'ft_app';
@@ -36,6 +47,7 @@ class Embedding
 	const FULLTEXT_TITLE = 'ft_title';
 	const FULLTEXT_DESCRIPTION = 'ft_description';
 	const FULLTEXT_EXTRA = 'ft_extra';
+	const FULLTEXT_PART = 'ft_part';
 	const FULLTEXT_MODIFIED = 'ft_updated';
 
 	/**
@@ -196,7 +208,8 @@ class Embedding
 		self::$chunk_overlap = $config['chunk_overlap'] ?? 50;
 		self::$model = $config['embedding_model'] ?? 'bge-m3';
 		self::$minimize_chunks = ($config['minimize_chunks'] ?? 'yes') !== 'no';
-		self::$max_runtime = (int) $config['async_maxruntime'] ?? 285;
+		// the cast has to happen after ??, (int)null is 0 and would stop embed() after the first entry
+		self::$max_runtime = (int)($config['async_maxruntime'] ?? 285) ?: 285;
 
 		$custom_times = [];
 		foreach (['year', 'month', 'day', 'dow', 'hour', 'min'] as $key) {
@@ -436,9 +449,11 @@ class Embedding
 	/**
 	 * Create embeddings for given chunk(s)
 	 *
+	 * Identical chunks are only returned once, so the result can have fewer elements than $chunks.
+	 *
 	 * @param string[] $chunks array of utf-8 strings
-	 * @return array[] array of objects with attributes n, sha256, chunk and embedding
-	 *  (also app, app_id and id, if response is from DB), same order and keys as $chunks!
+	 * @return object[] objects with attributes n (key in $chunks), sha256, chunk and embedding,
+	 *  plus app, app_id and id, if the embedding was found in egw_rag, or cached=true, if found in egw_rag_cache
 	 * @throws \Exception
 	 */
 	public function create(array $chunks) : array
@@ -448,7 +463,7 @@ class Embedding
 		foreach($chunks as $n => $chunk)
 		{
 			$sha256 = hash('sha256', $chunk, true);
-			$responses[$sha256] = (object)[
+			$responses[$sha256] ??= (object)[
 				'n'      => $n,
 				'sha256' => $sha256,
 				'chunk'  =>	$chunk,
@@ -456,24 +471,42 @@ class Embedding
 		}
 		// check if we already have an embedding for that chunk-content by comparing the sha256 hash
 		foreach($this->db->select(self::TABLE, '*', [
-			'rag_hash' => array_map(fn($v) => $v->sha256, $responses),
-		], __LINE__, __FILE__, false, 'GROUP BY rag_hash', self::APP) as $row)
+			self::EMBEDDING_HASH => array_keys($responses),
+		], __LINE__, __FILE__, false, 'GROUP BY '.self::EMBEDDING_HASH, self::APP) as $row)
 		{
-			if (!isset($responses[$row['rag_hash']])) continue;   // not sure how this can happen, but it does...
-			$responses[$row['rag_hash']]->embedding = array_values(unpack('g*', $row['rag_embedding']));
-			$responses[$row['rag_hash']]->app = $row['rag_app'];
-			$responses[$row['rag_hash']]->app_id = $row['rag_app_id'];
-			$responses[$row['rag_hash']]->id = $row['rag_id'];
-			unset($chunks[$responses[$row['rag_hash']]->n]);
+			if (!isset($responses[$row[self::EMBEDDING_HASH]])) continue;   // not sure how this can happen, but it does...
+			$response = $responses[$row[self::EMBEDDING_HASH]];
+			$response->embedding = array_values(unpack('g*', $row[self::EMBEDDING]));
+			$response->app = $row[self::EMBEDDING_APP];
+			$response->app_id = $row[self::EMBEDDING_APP_ID];
+			$response->id = $row['rag_id'];
 		}
-		// any chunks we need embeddings for
-		if ($chunks)
+		// then in the cache of search patterns
+		if (($missing = array_keys(array_filter($responses, static fn($r) => !isset($r->embedding)))))
 		{
-			$chunks = array_values($chunks);
+			try {
+				foreach($this->db->select(self::CACHE_TABLE, [self::CACHE_HASH, self::CACHE_EMBEDDING], [
+					self::CACHE_HASH => $missing,
+				], __LINE__, __FILE__, false, '', self::APP) as $row)
+				{
+					if (!isset($responses[$row[self::CACHE_HASH]])) continue;
+					$responses[$row[self::CACHE_HASH]]->embedding = array_values(unpack('g*', $row[self::CACHE_EMBEDDING]));
+					$responses[$row[self::CACHE_HASH]]->cached = true;
+				}
+			}
+			catch (InvalidSql $e) {
+				// cache table not yet created, because the update has not run
+			}
+		}
+		// any chunks we need embeddings for, $pending maps the position in the request to the sha256 key
+		$pending = array_keys(array_filter($responses, static fn($r) => !isset($r->embedding)));
+		if ($pending)
+		{
+			$input = array_map(static fn($sha256) => $responses[$sha256]->chunk, $pending);
 			try {
 				$response = $this->client->embeddings()->create([
 					'model' => self::$model,
-					'input' => $chunks,
+					'input' => $input,
 				]);
 			}
 			catch (\Exception $e)   // JsonException of unsure namespace, therefore catch them all
@@ -483,7 +516,7 @@ class Embedding
 				{
 					$response = $this->client->embeddings()->create([
 						'model' => self::$model,
-						'input' => json_decode(json_encode($chunks, JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR), true),
+						'input' => json_decode(json_encode($input, JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR), true),
 					]);
 					unset($e);
 				}
@@ -494,21 +527,47 @@ class Embedding
 			}
 			foreach ($response->embeddings as $n => $embedding)
 			{
-				$key = $chunkKeys[$n] ?? null;
-
-				if ($key === null) continue;
-
-				foreach ($responses as $i => $chunkResponse)
+				// the response carries the position of the input, don't rely on the order alone
+				if (($sha256 = $pending[$embedding->index ?? $n] ?? null) !== null)
 				{
-					if ((string)$chunkResponse->n === (string)$key)
-					{
-						$responses[$i]->embedding = array_slice($embedding->embedding, 0, 1024);
-						break;
-					}
+					// models like qwen3-embedding return more dimensions than our vector(1024) column takes
+					$responses[$sha256]->embedding = array_slice($embedding->embedding, 0, 1024);
+				}
+			}
+			foreach ($pending as $sha256)
+			{
+				if (empty($responses[$sha256]->embedding))
+				{
+					throw new \Exception('Endpoint returned no embedding for chunk #'.$responses[$sha256]->n.
+						' of '.count($chunks).' ('.count($response->embeddings).' of '.count($input).' embeddings returned)');
 				}
 			}
 		}
 		return array_values($responses);
+	}
+
+	/**
+	 * (Re-)create the vector index of egw_rag for the cosine distance all queries use
+	 *
+	 * The schema array can only create a bare VECTOR index, which MariaDB builds with mhnsw_default_distance
+	 * (euclidean by default) and then never uses for VEC_DISTANCE_COSINE().
+	 * Rebuilding the index on a big table takes a while!
+	 *
+	 * @param Api\Db $db
+	 * @throws Api\Db\Exception
+	 */
+	public static function createVectorIndex(Api\Db $db)
+	{
+		$drop = [];
+		foreach($db->query('SHOW INDEX FROM '.self::TABLE, __LINE__, __FILE__) as $index)
+		{
+			if (strtoupper($index['Index_type']) === 'VECTOR')
+			{
+				$drop[$index['Key_name']] = 'DROP INDEX '.$db->name_quote($index['Key_name']);
+			}
+		}
+		$db->query('ALTER TABLE '.self::TABLE.' '.implode(', ', $drop).($drop ? ', ' : '').
+			'ADD VECTOR INDEX egw_rag_embedding ('.self::EMBEDDING.') M=16 DISTANCE=cosine', __LINE__, __FILE__);
 	}
 
 	/**
@@ -583,6 +642,7 @@ class Embedding
 								], [
 									self::FULLTEXT_APP => $app,
 									self::FULLTEXT_APP_ID => $id,
+									self::FULLTEXT_PART => '',
 								], __LINE__, __FILE__, self::APP);
 								//continue;
 							}
@@ -623,6 +683,7 @@ class Embedding
 							], [
 								self::EMBEDDING_APP => $app,
 								self::EMBEDDING_APP_ID => $id,
+								self::EMBEDDING_PART => '',
 								self::EMBEDDING_CHUNK => $n,
 							], __LINE__, __FILE__, self::APP);
 						}
@@ -630,6 +691,7 @@ class Embedding
 						$this->db->delete(self::TABLE, [
 							self::EMBEDDING_APP => $app,
 							self::EMBEDDING_APP_ID => $id,
+							self::EMBEDDING_PART => '',
 							self::EMBEDDING_CHUNK . '>' . $n,
 						], __LINE__, __FILE__, self::APP);
 					}
@@ -898,76 +960,56 @@ class Embedding
 			throw $e;
 		}
 		// is $pattern already cached, or do we need to do so now
-		if (empty($response[0]->id))
+		if (empty($response[0]->id) && empty($response[0]->cached))
 		{
 			$this->cacheQueryEmbedding($response[0]);
 		}
-		$cols = [
-			self::EMBEDDING_APP,
-			self::EMBEDDING_APP_ID,
-			'VEC_DISTANCE_COSINE('.Embedding::EMBEDDING.', '.$this->db->quote($response[0]->embedding, 'vector').') as distance',
-			self::EMBEDDING_MODIFIED.' AS modified',
-		];
+		$where = [];
+		if ($app) $where[] = $this->db->expression(self::TABLE, [self::EMBEDDING_APP => $app]);
+		if ($app_ids) $where[] = self::EMBEDDING_APP_ID.' IN ('.implode(',', array_map('intval', $app_ids)).')';
+
+		// k-nearest chunks: MariaDB only uses the vector index for exactly this shape, ORDER BY the distance function
+		// (with the distance the index was built with) ASC plus a LIMIT, therefore the entry level grouping,
+		// the max. distance and the requested order are applied outside
+		$k = min(max(500, 5 * ($start + $num_rows)), 10000);
+		$knn = 'SELECT '.self::EMBEDDING_APP.','.self::EMBEDDING_APP_ID.','.self::EMBEDDING_MODIFIED.
+			',VEC_DISTANCE_COSINE('.self::EMBEDDING.', '.$this->db->quote($response[0]->embedding, 'vector').') AS distance'.
+			' FROM '.self::TABLE.($where ? ' WHERE '.implode(' AND ', $where) : '').
+			' ORDER BY distance LIMIT '.$k;
+		// best chunk per entry, so every entry counts once for LIMIT and total
+		$entries = 'SELECT '.self::EMBEDDING_APP.','.self::EMBEDDING_APP_ID.',MIN(distance) AS distance,MAX('.self::EMBEDDING_MODIFIED.') AS modified'.
+			' FROM ('.$knn.') knn WHERE distance < '.(float)$max_distance.
+			' GROUP BY '.self::EMBEDDING_APP.','.self::EMBEDDING_APP_ID;
+
+		$cols = ['entries.*'];
+		$join = '';
 		if ($return_all)
 		{
 			$cols[] = self::FULLTEXT_TITLE.' AS title';
 			$cols[] = self::FULLTEXT_DESCRIPTION.' AS description';
 			$cols[] = self::FULLTEXT_EXTRA.' AS extra';
+			$join = ' LEFT JOIN '.self::FULLTEXT_TABLE.' ON entries.'.self::EMBEDDING_APP.'='.self::FULLTEXT_APP.
+				' AND entries.'.self::EMBEDDING_APP_ID.'='.self::FULLTEXT_APP_ID.' AND '.self::FULLTEXT_PART."=''";
 		}
-		$order = self::validateOrder($order, 'distance');
 		$id_distance = [];
-		foreach($this->db->select(self::TABLE, 'SQL_CALC_FOUND_ROWS '.implode(',', $cols),
-			$app ? [self::EMBEDDING_APP => $app,] : self::EMBEDDING_APP.'<>'.$this->db->quote(self::EMBEDDING_CACHE),
-			__LINE__, __FILE__, $start, 'HAVING distance<'.$max_distance.($app_ids ? ' AND '.self::EMBEDDING_APP_ID .' IN ('.implode(',',$app_ids).')' : '' ).' ORDER BY '.$order, self::APP, $num_rows,
-			$return_all ? ' LEFT JOIN '.self::FULLTEXT_TABLE.' ON '.self::EMBEDDING_APP.'='.self::FULLTEXT_APP.
-			' AND '.self::EMBEDDING_APP_ID.'='.self::FULLTEXT_APP_ID : '') as $row)
+		foreach($this->db->query('SELECT SQL_CALC_FOUND_ROWS '.implode(',', $cols).' FROM ('.$entries.') entries'.$join.
+			' ORDER BY '.self::validateOrder($order, 'distance'), __LINE__, __FILE__, $start, $num_rows) as $row)
 		{
 			$id = $app && is_string($app) ? (int)$row[self::EMBEDDING_APP_ID] : $row[self::EMBEDDING_APP].':'.$row[self::EMBEDDING_APP_ID];
-			// only insert the first / best match, as multiple chunks could match
-			if (!isset($id_distance[$id]))
+			// if the app is not fulltext indexed, we won't get texts and need to query them separate from the app
+			if ($return_all && !isset($row['title']))
 			{
-				// if the app is not fulltext index, we won't get texts and need to query them separate from the app
-				if ($return_all && !isset($row['title']))
-				{
-					static $plugins=null; $plugins ??= self::plugins();
-					/** @var class-string<Embedding\Base> $plugin_class */
-					$plugin_class = $plugins[$row[self::EMBEDDING_APP]] ?? null;
-					if ($plugin_class)
-					{
-						$plugin = new $plugin_class();
-						// top-level app+id (not nested under 'data') is required so getUpdated()
-						// scopes its query to this one entry via $where[ID], see
-						// Base::getUpdated()/notify()'s $data shape - and $row += $entry further
-						// down would never have overwritten $row's own (null) title/description
-						// keys with $entry's, nor would it have landed under the right key names,
-						// since getUpdated() yields the app's own raw column names (e.g.
-						// n_fileas), not 'title'/'description'
-						foreach ($plugin->getUpdated(true, [
-							'app' => $row[self::EMBEDDING_APP],
-							'id' => $row[self::EMBEDDING_APP_ID],
-						], true) as $entry)
-						{
-							// same value-only extra shape as stored in FULLTEXT_EXTRA, see embed()
-							$extra = $entry;
-							unset($extra[$plugin_class::ID], $extra[$plugin_class::MODIFIED],
-								$extra[$plugin_class::TITLE], $extra[$plugin_class::DESCRIPTION]);
-							$row['title'] = $entry[$plugin_class::TITLE] ?? null;
-							$row['description'] = $entry[$plugin_class::DESCRIPTION] ?? null;
-							$row['extra'] = $extra ? json_encode(array_values($extra)) : null;
-							break;
-						}
-					}
-				}
-				$id_distance[$id] = $return_all ? [
-					'distance' => (float)$row['distance'],
-					'modified' => new Api\DateTime($row['modified'], Api\DateTime::$server_timezone),
-					'title' => $row['title'],
-					'description' => $row['description'],
-					'extra' => $row['extra'] ? (array)json_decode($row['extra'], true) : [],
-				] : (float)$row['distance'];
+				$row = array_merge($row, $this->readEntry($row[self::EMBEDDING_APP], (int)$row[self::EMBEDDING_APP_ID]));
 			}
+			$id_distance[$id] = $return_all ? [
+				'distance' => (float)$row['distance'],
+				'modified' => new Api\DateTime($row['modified'], Api\DateTime::$server_timezone),
+				'title' => $row['title'] ?? null,
+				'description' => $row['description'] ?? null,
+				'extra' => !empty($row['extra']) ? (is_array($row['extra']) ? $row['extra'] : (array)json_decode($row['extra'], true)) : [],
+			] : (float)$row['distance'];
 		}
-		$this->total = $this->db->query('SELECT FOUND_ROWS()')->fetchColumn();
+		$this->total = (int)$this->db->query('SELECT FOUND_ROWS()')->fetchColumn();
 		if (self::$log_level)
 		{
 			error_log(__METHOD__."('$pattern', '$app', start=$start, num_rows=$num_rows, max_distance=$max_distance) total=$this->total returning ".
@@ -977,41 +1019,66 @@ class Embedding
 	}
 
 	/**
-	 * Cache a query embedding under the *cache* pseudo-app, retrying on a chunk-number collision
+	 * Cache the embedding of a search pattern in the cache table
 	 *
-	 * Concurrent searches caching two different, not yet seen patterns can read the same
-	 * MAX(rag_chunk) and then collide on the (rag_app,rag_app_id,rag_chunk) unique key. Retrying
-	 * with a freshly read MAX(rag_chunk) lets both survive, instead of REPLACEing (which would
-	 * silently discard whichever of the two colliding rows loses the race) or failing the search.
+	 * The cache table has the sha256 hash of the pattern as primary key and is written with a REPLACE, so
+	 * concurrent searches caching the same or different, not yet seen patterns can not collide (as they did
+	 * with the MAX(rag_chunk)+1 numbering, when the cache was stored under the *cache* pseudo-app in egw_rag).
 	 *
 	 * @param object $response object with ->sha256 (binary sha256 hash) and ->embedding (float[]) attributes
-	 * @throws InvalidSql if not a duplicate-key error, or retries exhausted
+	 * @throws InvalidSql for everything but the cache table not yet existing
 	 */
 	protected function cacheQueryEmbedding(object $response) : void
 	{
-		for ($retry = 0; ; ++$retry)
-		{
-			try {
-				$this->db->insert(self::TABLE, [
-					self::EMBEDDING_APP => self::EMBEDDING_CACHE,
-					self::EMBEDDING_APP_ID => 0,
-					self::EMBEDDING_CHUNK => 1+(int)$this->db->select(self::TABLE, 'MAX('.self::EMBEDDING_CHUNK.')', [
-						self::EMBEDDING_APP => self::EMBEDDING_CACHE,
-						self::EMBEDDING_APP_ID => 0,
-					], __LINE__, __FILE__, false, '', self::APP)->fetchColumn(),
-					self::EMBEDDING_HASH => $response->sha256,
-					self::EMBEDDING => $response->embedding,
-					self::EMBEDDING_MODIFIED => new Api\DateTime(),
-				], false, __LINE__, __FILE__, self::APP);
-				return;
-			}
-			catch (InvalidSql $e) {
-				if ($e->getCode() != 1062 || $retry >= 3)   // not a duplicate-key error, or retries exhausted
-				{
-					throw $e;
-				}
+		try {
+			$this->db->insert(self::CACHE_TABLE, [
+				self::CACHE_EMBEDDING => $response->embedding,
+				self::CACHE_UPDATED => new Api\DateTime(),
+			], [
+				self::CACHE_HASH => $response->sha256,
+			], __LINE__, __FILE__, self::APP);
+		}
+		catch (InvalidSql $e) {
+			// 1146: cache table not yet created, because the update has not run --> search without caching
+			if ($e->getCode() != 1146)
+			{
+				throw $e;
 			}
 		}
+	}
+
+	/**
+	 * Read title, description and extra texts of an entry directly from its app
+	 *
+	 * Used for entries of apps without fulltext index.
+	 *
+	 * @param string $app
+	 * @param int $id
+	 * @return array with keys title, description and extra (array), empty array if the entry is not found
+	 */
+	protected function readEntry(string $app, int $id) : array
+	{
+		static $plugins=null;
+		$plugins ??= self::plugins();
+		if (empty($plugins[$app]))
+		{
+			return [];
+		}
+		/** @var Embedding\Base $plugin */
+		$plugin = new $plugins[$app];
+		// app and id have to be top-level keys, otherwise getUpdated() iterates over all not yet indexed entries of the app,
+		// $ignoreStaleness=true: we want the entry's current data, whether or not the index is up-to-date
+		foreach($plugin->getUpdated(true, ['app' => $app, 'id' => $id], true) as $entry)
+		{
+			// same positional mapping as in embed()
+			$extra = array_values($entry);
+			return [
+				'title' => $extra[2] ?? null,
+				'description' => $extra[3] ?? null,
+				'extra' => array_values(array_filter(array_slice($extra, 4), static fn($v) => is_scalar($v) && trim((string)$v) !== '')),
+			];
+		}
+		return [];
 	}
 
 	/**
@@ -1202,8 +1269,9 @@ class Embedding
 	{
 		if (!$description || !trim($description)) return $chunks;    // nothing to do
 
+		// count characters, not bytes, substr() would cut multibyte utf-8 characters in half
 		$n = 0;
-		while(strlen($chunk = substr($description, $n*(self::$chunk_size-self::$chunk_overlap),
+		while(mb_strlen($chunk = mb_substr($description, $n*(self::$chunk_size-self::$chunk_overlap),
 			self::$chunk_size)) > self::$chunk_overlap || !$n)
 		{
 			$chunks[] = $chunk;

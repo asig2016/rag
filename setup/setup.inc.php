@@ -10,9 +10,9 @@
  */
 
 $setup_info['rag']['name']      = 'rag';
-$setup_info['rag']['version']   = '26.1.001';
+$setup_info['rag']['version']   = '26.1.002';
 $setup_info['rag']['app_order'] = 5;
-$setup_info['rag']['tables']    = ['egw_rag', 'egw_rag_fulltext'];
+$setup_info['rag']['tables']    = ['egw_rag', 'egw_rag_fulltext', 'egw_rag_cache'];
 $setup_info['rag']['only_db']   = ['mysql']; // MariaDB 11.7+ required for Vector/RAG
 $setup_info['rag']['enable']    = 5;        // hidden from navbar, but framework app without index
 $setup_info['rag']['autoinstall'] = true;   // install automatic on update

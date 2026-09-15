@@ -1,6 +1,6 @@
 <?php
 /**
- * EGroupware RAG: Test Embedding::cacheQueryEmbedding()'s retry-on-duplicate-key behaviour
+ * EGroupware RAG: Test Embedding::cacheQueryEmbedding() writing the search pattern cache
  *
  * @link http://www.egroupware.org
  * @package rag
@@ -19,19 +19,17 @@ require_once realpath(__DIR__.'/../../api/tests/LoggedInTest.php');
 /**
  * doc/ai/projects/rag-test-coverage.md's priority-1 entry.
  *
- * Embedding::searchEmbeddings()'s *cache* query-embedding insert used to be a plain INSERT
- * after a non-atomic MAX(rag_chunk)+1 read: two concurrent searches caching two different,
- * not yet seen patterns could compute the same next rag_chunk and collide on the
+ * Embedding::searchEmbeddings()'s query-embedding cache used to live under the *cache* pseudo-app
+ * in egw_rag, numbered by a non-atomic MAX(rag_chunk)+1 read: two concurrent searches caching two
+ * different, not yet seen patterns could compute the same next rag_chunk and collide on the
  * (rag_app,rag_app_id,rag_chunk) unique key, throwing an uncaught duplicate-key InvalidSql
- * straight to the user - a real, live-reported bug. Fixed by extracting the insert into
- * Embedding::cacheQueryEmbedding(), which retries with a freshly read MAX(rag_chunk) on a
- * 1062 collision (up to 3 times) instead of failing.
+ * straight to the user - a real, live-reported bug. First fixed by a retry in
+ * Embedding::cacheQueryEmbedding(), the collision is now impossible by design: the cache has its
+ * own egw_rag_cache table with the pattern's sha256 hash as primary key, written with a REPLACE.
  *
- * These tests exercise cacheQueryEmbedding() directly (via reflection, it's protected) with
- * a `$db` stand-in that simulates the collision deterministically - real concurrent processes
- * racing the actual MAX()+1 read would be flaky and slow to reproduce on demand, and the
- * simulated 1062 is indistinguishable to the code under test from a real one (both take the
- * exact same `catch (InvalidSql $e) { if ($e->getCode() != 1062 ...` branch).
+ * These tests exercise cacheQueryEmbedding() directly (via reflection, it's protected): caching
+ * the same pattern twice must not fail, a missing cache table (update not yet run) must not fail
+ * the search, and every other DB error still has to propagate.
  */
 class EmbeddingCacheRaceTest extends Api\LoggedInTest
 {
@@ -44,10 +42,8 @@ class EmbeddingCacheRaceTest extends Api\LoggedInTest
 	{
 		if ($this->hashes)
 		{
-			$GLOBALS['egw']->db->delete(Embedding::TABLE, [
-				'rag_app'   => Embedding::EMBEDDING_CACHE,
-				'rag_app_id' => 0,
-				'rag_hash'  => $this->hashes,
+			$GLOBALS['egw']->db->delete(Embedding::CACHE_TABLE, [
+				Embedding::CACHE_HASH => $this->hashes,
 			], __LINE__, __FILE__, Embedding::APP);
 			$this->hashes = [];
 		}
@@ -63,7 +59,7 @@ class EmbeddingCacheRaceTest extends Api\LoggedInTest
 		$this->hashes[] = $hash;
 		return (object)[
 			'sha256'    => $hash,
-			'embedding' => array_fill(0, 1024, 0.0),  // egw_rag.rag_embedding is VECTOR(1024)
+			'embedding' => array_fill(0, 1024, 0.0),  // egw_rag_cache.rc_embedding is VECTOR(1024)
 		];
 	}
 
@@ -82,17 +78,16 @@ class EmbeddingCacheRaceTest extends Api\LoggedInTest
 	}
 
 	/**
-	 * A $db stand-in whose insert() throws a simulated duplicate-key (or other) InvalidSql the
-	 * first $failures times it's called, then forwards to the real $db - select()/fetchColumn()
-	 * (used to read MAX(rag_chunk)) and everything else always forwards to the real $db.
+	 * A $db stand-in whose insert() always throws a simulated InvalidSql with the given MariaDB
+	 * error code, everything else forwards to the real $db.
 	 */
-	private function racyDb($failures, int $code = 1062)
+	private function failingDb(int $code)
 	{
-		return new class($GLOBALS['egw']->db, $failures, $code)
+		return new class($GLOBALS['egw']->db, $code)
 		{
 			public int $insertCalls = 0;
 
-			public function __construct(private $real, private $failures, private int $code)
+			public function __construct(private $real, private int $code)
 			{
 			}
 
@@ -101,72 +96,67 @@ class EmbeddingCacheRaceTest extends Api\LoggedInTest
 				if ($name === 'insert')
 				{
 					$this->insertCalls++;
-					if ($this->failures === true || $this->insertCalls <= $this->failures)
-					{
-						throw new InvalidSql('simulated duplicate entry', $this->code);
-					}
+					throw new InvalidSql('simulated error', $this->code);
 				}
 				return $this->real->$name(...$args);
 			}
 		};
 	}
 
-	public function testRetriesOnceOnDuplicateKeyCollisionThenSucceeds()
+	private function cachedRows(string $hash) : int
+	{
+		return (int)$GLOBALS['egw']->db->select(Embedding::CACHE_TABLE, 'COUNT(*)', [
+			Embedding::CACHE_HASH => $hash,
+		], __LINE__, __FILE__, false, '', Embedding::APP)->fetchColumn();
+	}
+
+	public function testStoresEmbeddingInCacheTable()
 	{
 		$embedding = new Embedding();
-		$racy = $this->racyDb(1);
-		$this->setDb($embedding, $racy);
-
-		$response = $this->fakeResponse('retry-once');
+		$response = $this->fakeResponse('store');
 		$this->callCacheQueryEmbedding($embedding, $response);
 
-		$this->assertSame(2, $racy->insertCalls,
-			'expected exactly one retry after the simulated collision');
-
-		$stored = $GLOBALS['egw']->db->select(Embedding::TABLE, 'rag_hash', [
-			'rag_hash' => $response->sha256,
-		], __LINE__, __FILE__, false, '', Embedding::APP)->fetchColumn();
-		$this->assertSame($response->sha256, $stored,
-			'the embedding should have been persisted by the retried insert');
+		$this->assertSame(1, $this->cachedRows($response->sha256),
+			'the embedding should have been persisted to the cache table');
 	}
 
-	public function testGivesUpAfterExhaustingRetries()
+	public function testCachingTheSamePatternTwiceDoesNotCollide()
 	{
 		$embedding = new Embedding();
-		$racy = $this->racyDb(true);   // always fails
-		$this->setDb($embedding, $racy);
+		$response = $this->fakeResponse('twice');
+		$this->callCacheQueryEmbedding($embedding, $response);
+		// what a concurrent search for the same, not yet cached pattern does
+		$this->callCacheQueryEmbedding($embedding, $response);
 
-		$response = $this->fakeResponse('exhausted');
-		try
-		{
-			$this->callCacheQueryEmbedding($embedding, $response);
-			$this->fail('expected an InvalidSql exception after exhausting retries');
-		}
-		catch (InvalidSql $e)
-		{
-			$this->assertSame(1062, $e->getCode());
-		}
-		$this->assertSame(4, $racy->insertCalls,
-			'expected the initial attempt plus 3 retries, then giving up');
+		$this->assertSame(1, $this->cachedRows($response->sha256),
+			'the second write has to replace the row, not fail with a duplicate key or add another one');
 	}
 
-	public function testNonDuplicateKeyErrorPropagatesWithoutRetrying()
+	public function testMissingCacheTableDoesNotFailTheSearch()
 	{
 		$embedding = new Embedding();
-		$racy = $this->racyDb(true, 1064);   // "syntax error", not a duplicate-key
-		$this->setDb($embedding, $racy);
+		$failing = $this->failingDb(1146);   // "Table 'egw_rag_cache' doesn't exist", update not yet run
+		$this->setDb($embedding, $failing);
 
-		$response = $this->fakeResponse('non-duplicate');
+		$this->callCacheQueryEmbedding($embedding, $this->fakeResponse('no-table'));
+		$this->assertSame(1, $failing->insertCalls);
+	}
+
+	public function testOtherErrorsPropagate()
+	{
+		$embedding = new Embedding();
+		$failing = $this->failingDb(1064);   // "syntax error"
+		$this->setDb($embedding, $failing);
+
 		try
 		{
-			$this->callCacheQueryEmbedding($embedding, $response);
+			$this->callCacheQueryEmbedding($embedding, $this->fakeResponse('other-error'));
 			$this->fail('expected an InvalidSql exception');
 		}
 		catch (InvalidSql $e)
 		{
 			$this->assertSame(1064, $e->getCode());
 		}
-		$this->assertSame(1, $racy->insertCalls,
-			'a non-duplicate-key error must not be retried');
+		$this->assertSame(1, $failing->insertCalls);
 	}
 }

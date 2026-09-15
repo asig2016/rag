@@ -55,10 +55,8 @@ class EmbeddingSearchEmbeddingsTest extends Api\LoggedInTest
 		], __LINE__, __FILE__, Embedding::APP);
 		if ($this->hashesToClean)
 		{
-			$db->delete(Embedding::TABLE, [
-				'rag_app' => Embedding::EMBEDDING_CACHE,
-				'rag_app_id' => 0,
-				'rag_hash' => $this->hashesToClean,
+			$db->delete(Embedding::CACHE_TABLE, [
+				Embedding::CACHE_HASH => $this->hashesToClean,
 			], __LINE__, __FILE__, Embedding::APP);
 			$this->hashesToClean = [];
 		}
@@ -184,14 +182,12 @@ class EmbeddingSearchEmbeddingsTest extends Api\LoggedInTest
 
 		$embedding->searchEmbeddings($pattern, self::FAKE_APP, 0, 50, false, 'default', 1.5);
 		$this->assertSame(1, $callCount,
-			'the same pattern searched again must hit the *cache* row via the sha256 lookup in '.
+			'the same pattern searched again must hit the cache table via the sha256 lookup in '.
 			'create(), not call the embeddings API a second time');
 
-		$cached = $GLOBALS['egw']->db->select(Embedding::TABLE, 'rag_hash', [
-			'rag_app' => Embedding::EMBEDDING_CACHE,
-			'rag_app_id' => 0,
-			'rag_hash' => hash('sha256', $pattern, true),
+		$cached = $GLOBALS['egw']->db->select(Embedding::CACHE_TABLE, Embedding::CACHE_HASH, [
+			Embedding::CACHE_HASH => hash('sha256', $pattern, true),
 		], __LINE__, __FILE__, false, '', Embedding::APP)->fetchColumn();
-		$this->assertNotFalse($cached, 'the pattern embedding should have been persisted to the *cache* pseudo-app');
+		$this->assertNotFalse($cached, 'the pattern embedding should have been persisted to the cache table');
 	}
 }

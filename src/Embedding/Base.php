@@ -148,13 +148,20 @@ abstract class Base
 			$where[] = static::RAG_EXTRA_CONDITION;
 		}
 		$join = $this->getJoin($where, $fulltext, $ignoreStaleness);
+		// Page by id and never from offset 0 again: an entry indexed successfully drops out of the join anyway,
+		// but one failing every time (or never matching the modified condition) would otherwise be selected again
+		// and again, and CHUNK_SIZE of them would keep this loop running until Embedding::$max_runtime.
+		$last_id = 0;
 		do
 		{
 			$r = 0;
+			$page_where = $where;
+			$page_where[] = static::TABLE.'.'.static::ID.' > '.(int)$last_id;
 			foreach ($entries ?? $this->db->select(static::TABLE, $cols,
-				$where, __LINE__, __FILE__, 0, 'ORDER BY ' . static::MODIFIED . ' ASC', '',
-				static::CHUNK_SIZE, $join) as $row)
+				$page_where, __LINE__, __FILE__, 0,
+				'ORDER BY ' . static::TABLE.'.'.static::ID . ' ASC', '', static::CHUNK_SIZE, $join) as $row)
 			{
+				$last_id = max($last_id, (int)$row[static::ID]);
 				if (!empty($row[static::MODIFIED]) && !is_object($row[static::MODIFIED]))
 				{
 					// hook-data is in user-timezone, while queried data is in server-timezone
@@ -206,7 +213,8 @@ abstract class Base
 			}
 			return 'LEFT JOIN '.Embedding::TABLE.' ON '.
 				Embedding::EMBEDDING_APP.'='.$this->db->quote(static::APP).' AND '.
-				Embedding::EMBEDDING_APP_ID.'='.static::ID.' AND '.Embedding::EMBEDDING_CHUNK.'=0';
+				Embedding::EMBEDDING_APP_ID.'='.static::ID.' AND '.Embedding::EMBEDDING_PART."='' AND ".
+				Embedding::EMBEDDING_CHUNK.'=0';
 		}
 		if (!$ignoreStaleness)
 		{
@@ -214,7 +222,7 @@ abstract class Base
 		}
 		return 'LEFT JOIN '.Embedding::FULLTEXT_TABLE.' ON '.
 			Embedding::FULLTEXT_APP.'='.$this->db->quote(static::APP).' AND '.
-			Embedding::FULLTEXT_APP_ID.'='.static::ID;
+			Embedding::FULLTEXT_APP_ID.'='.static::ID.' AND '.Embedding::FULLTEXT_PART."=''";
 	}
 
 	/**

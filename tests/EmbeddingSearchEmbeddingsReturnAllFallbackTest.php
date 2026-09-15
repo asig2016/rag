@@ -64,8 +64,8 @@ class EmbeddingSearchEmbeddingsReturnAllFallbackTest extends Api\LoggedInTest
 		}
 		if ($this->hashesToClean)
 		{
-			$db->delete(Embedding::TABLE, [
-				'rag_app' => Embedding::EMBEDDING_CACHE, 'rag_app_id' => 0, 'rag_hash' => $this->hashesToClean,
+			$db->delete(Embedding::CACHE_TABLE, [
+				Embedding::CACHE_HASH => $this->hashesToClean,
 			], __LINE__, __FILE__, Embedding::APP);
 			$this->hashesToClean = [];
 		}

@@ -1,10 +1,10 @@
 # RAG: search quality
 
-## Status: planned (2026-09-15), nothing implemented yet
+## Status: phase 1 implemented (2026-09-15), not yet run against a real embedding endpoint
 
 | Phase | Topic | Status |
 |---|---|---|
-| 1 | Bug fixes + schema (vector index, cache table, parts) | open |
+| 1 | Bug fixes + schema (vector index, cache table, parts) | implemented, see "Phase 1 notes" |
 | 2 | Hybrid ranking with Reciprocal Rank Fusion | open |
 | 3 | Chunking + chunk context (forces a re-index) | open |
 | 4 | Fulltext tightening for multi-word queries (optional) | open |
@@ -122,6 +122,21 @@ attached or linked files.
     (raw SQL; check the actual index name with `SHOW CREATE TABLE egw_rag`)
   - create `egw_rag_cache`, move the `*cache*` rows, delete them from `egw_rag`
   - add `rag_part` / `ft_part` and the new unique keys
+
+### Phase 1 notes (2026-09-15)
+
+- Paging in `Base::getUpdated()` is by id (`TABLE.ID > last id ORDER BY TABLE.ID`), not by the
+  modified time as planned: keyset paging on a nullable modified column is not reliable, and the id
+  keyset skips failing rows without collecting them in `embed()`.
+- `Embedding::createVectorIndex()` rebuilds the index with raw SQL, called by the update and by
+  `setup/default_records.inc.php` - the schema array cannot pass `M=`/`DISTANCE=`.
+- `searchEmbeddings()` reads texts of entries without fulltext row through the new `readEntry()`.
+- The k-NN depth is `min(max(500, 5 * (start + num_rows)), 10000)` chunks.
+- Tested: migration SQL + `EXPLAIN` on a scratch copy of the old schema (MariaDB 11.8.8, the inner
+  query uses `egw_rag_embedding`, results come back one row per entry); `create()` against a stubbed
+  OpenAI HTTP transport, in request order and in reversed response order (the committed code fails the
+  same test); `chunkSplit()` with German/Greek text. Not yet tested: a real `asyncJob()` run and the
+  setup update on an installed instance.
 
 ## Phase 2: Reciprocal Rank Fusion
 
