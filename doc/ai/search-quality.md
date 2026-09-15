@@ -8,6 +8,7 @@
 | 2 | Hybrid ranking with Reciprocal Rank Fusion | open |
 | 3 | Chunking + chunk context (forces a re-index) | open |
 | 4 | Fulltext tightening for multi-word queries (optional) | open |
+| 5 | Cross-encoder reranker (optional per install) | open |
 
 Goal: better results from the hybrid (embeddings + InnoDB fulltext) search used by
 `Api\Storage::process_search()` → `Embedding::search2criteria()` and by plugins calling
@@ -169,6 +170,31 @@ attached or linked files.
 - No result → rerun with the old OR pattern.
 - Also consider a custom stopword table for non-English installs and `innodb_ft_min_token_size=2`.
 
+## Phase 5 (optional per install): cross-encoder reranker
+
+Comes after phases 2 and 3: it re-sorts the fused candidates, needs chunks that carry their context,
+and needs the evaluation set to prove it helps (it adds a second endpoint and latency).
+
+- Config (`templates/default/config.xet`, `Embedding::initStatic()`):
+  - `rerank_model` - empty = off, e.g. `bge-reranker-v2-m3` (multilingual, same family as bge-m3)
+  - `rerank_url` - defaults to `url`
+  - `rerank_api` - `cohere` (llama.cpp `/v1/rerank`, vLLM, Jina) or `tei` (HF TEI `/rerank`)
+  - `rerank_depth` (default 50), `rerank_min_score` (default 0 = no cut-off), `rerank_timeout`
+    (default 3 s)
+- HTTP through `symfony/http-client`, already in `vendor/` via openai-php, which has no rerank call.
+- `Embedding::rerank(string $query, array $candidates) : array` returns `id => score`; the adapter
+  maps `results[{index, relevance_score}]` (cohere) or `[{index, score}]` (tei). A timeout or error
+  is logged through `logError()` and the fused order is kept - search never fails because of it.
+- `rerank_min_score` is a real relevance cut-off, which the vector distance cannot give; it matters
+  most for the id lists `search2criteria()` hands to app list searches.
+- Document text: `egw_rag` stores no chunk text. The query returns the best chunk's `rag_chunk`, and
+  its text is rebuilt with the same deterministic `chunkSplit()` from the fulltext row (or
+  `readEntry()`); fulltext-only hits send the chunk header plus the first ~2000 characters.
+- Runs in `search()` after the fusion and before the user's sort, and only when the order is
+  relevance or `rerank_min_score > 0` - a list sorted by date throws the new order away.
+- Latency: roughly 1-3 s for 50 candidates of ~500 tokens on CPU, far less on a GPU; say so on the
+  config page.
+
 ## Verification
 
 - Inspect the DB with the `mariadb` client. Do **not** bootstrap `header.inc.php` from a PHP CLI
@@ -180,6 +206,9 @@ attached or linked files.
     `DISTANCE=cosine`
   - chunks of a German/Greek text all pass `mb_check_encoding()`
   - a row forced to fail does not block the rows after it
+- Phase 5: same query set, fused vs reranked order (recall@10, MRR) plus latency per search; adapter
+  tested with stubbed cohere and tei responses, a timeout keeps the fused order. Needs a rerank
+  endpoint, e.g. llama.cpp `--reranking` with a bge-reranker-v2-m3 GGUF.
 - Phases 2-4: 30-50 real queries with known expected entries; compare recall@10 and MRR before and
   after each phase. An exact keyword match must appear in the top 10.
 - UI: list search in Tracker / InfoLog in hybrid mode - sane counts, sorting by date and by relevance
