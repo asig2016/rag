@@ -76,3 +76,47 @@ function rag_upgrade0_1_003()
 
 	return $GLOBALS['setup_info']['rag']['currentver'] = '26.1.001';
 }
+
+
+/**
+ * Search quality, part 1:
+ * - vector index for the cosine distance all queries use (was built for the euclidean default and never used)
+ * - cached search pattern embeddings in their own table, out of the vector index of egw_rag
+ * - rag_part / ft_part column, so an entry can have separately indexed parts, e.g. replies or files
+ *
+ * @return string
+ */
+function rag_upgrade26_1_001()
+{
+	/** @var Api\Db $db */
+	$db = $GLOBALS['egw_setup']->db;
+
+	$GLOBALS['egw_setup']->oProc->CreateTable('egw_rag_cache', array(
+		'fd' => array(
+			'rc_hash' => array('type' => 'binary','precision' => '32','nullable' => False,'comment' => 'binary sha256 hash of the search pattern'),
+			'rc_embedding' => array('type' => 'vector','precision' => '1024','nullable' => False),
+			'rc_updated' => array('type' => 'timestamp','nullable' => False,'default' => 'current_timestamp')
+		),
+		'pk' => array('rc_hash'),
+		'fk' => array(),
+		'ix' => array(),
+		'uc' => array()
+	));
+	$db->query("INSERT IGNORE INTO egw_rag_cache (rc_hash, rc_embedding, rc_updated)
+		SELECT rag_hash, rag_embedding, rag_updated FROM egw_rag WHERE rag_app='*cache*' AND rag_hash IS NOT NULL", __LINE__, __FILE__);
+	$db->query("DELETE FROM egw_rag WHERE rag_app='*cache*'", __LINE__, __FILE__);
+
+	// raw SQL: RefreshTable() would copy the whole table incl. rebuilding the vector index twice
+	$db->query("ALTER TABLE egw_rag
+		ADD rag_part VARCHAR(64) CHARACTER SET ascii NOT NULL DEFAULT '' COMMENT '\'\' = entry itself, or e.g. reply:<id>, file:<fs_id>',
+		DROP INDEX egw_rag_app_app_id_chunk,
+		ADD UNIQUE INDEX egw_rag_app_app_id_part_chunk (rag_app, rag_app_id, rag_part, rag_chunk)", __LINE__, __FILE__);
+	$db->query("ALTER TABLE egw_rag_fulltext
+		ADD ft_part VARCHAR(64) CHARACTER SET ascii NOT NULL DEFAULT '' COMMENT '\'\' = entry itself, or e.g. reply:<id>, file:<fs_id>',
+		DROP INDEX egw_rag_fulltext_ft_app_ft_app_id,
+		ADD UNIQUE INDEX egw_rag_fulltext_ft_app_ft_app_id_ft_part (ft_app, ft_app_id, ft_part)", __LINE__, __FILE__);
+
+	Rag\Embedding::createVectorIndex($db);
+
+	return $GLOBALS['setup_info']['rag']['currentver'] = '26.1.002';
+}

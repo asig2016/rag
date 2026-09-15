@@ -15,5 +15,8 @@ use EGroupware\Rag;
 $adminsgroup = $GLOBALS['egw_setup']->add_account('Admins', 'Admins', 'Group', false, false);
 $GLOBALS['egw_setup']->add_acl('rag', 'run', $adminsgroup);
 
+// the schema can only create a bare vector index, which is built for the euclidean distance
+Rag\Embedding::createVectorIndex($GLOBALS['egw_setup']->db);
+
 // install the async-job to build the fulltext index
 Rag\Embedding::installAsyncJob();
