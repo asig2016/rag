@@ -10,7 +10,7 @@
  */
 
 $setup_info['rag']['name']      = 'rag';
-$setup_info['rag']['version']   = '26.1.002';
+$setup_info['rag']['version']   = '26.1.003';
 $setup_info['rag']['app_order'] = 5;
 $setup_info['rag']['tables']    = ['egw_rag', 'egw_rag_fulltext', 'egw_rag_cache'];
 $setup_info['rag']['only_db']   = ['mysql']; // MariaDB 11.7+ required for Vector/RAG

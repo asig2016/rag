@@ -1,12 +1,12 @@
 # RAG: search quality
 
-## Status: phases 1-2 implemented (2026-09-15/16), not yet run against a real embedding endpoint
+## Status: phases 1-3 implemented (2026-09-15/16), not yet run against a real embedding endpoint
 
 | Phase | Topic | Status |
 |---|---|---|
 | 1 | Bug fixes + schema (vector index, cache table, parts) | implemented, see "Phase 1 notes" |
 | 2 | Hybrid ranking with Reciprocal Rank Fusion | implemented, see "Phase 2 notes" |
-| 3 | Chunking + chunk context (forces a re-index) | open |
+| 3 | Chunking + chunk context (forces a re-index) | implemented, see "Phase 3 notes" |
 | 4 | Fulltext tightening for multi-word queries (optional) | open |
 | 5 | Cross-encoder reranker (optional per install) | open |
 
@@ -177,6 +177,32 @@ attached or linked files.
 - Addressbook keeps `n_fileas` for RAG so it ends up in the header.
 - Tracker replies become parts (`reply:<id>`), each with the ticket header.
 - Update step truncates `egw_rag` (all chunks change, the hash cache cannot help).
+
+### Phase 3 notes (2026-09-16)
+
+- `chunkSplit($text, $header, $chunks)` splits on `(?<=[.!?;:])\s+|\n+`, fills up to `chunk_size`
+  characters (header included), overlaps by `chunk_overlap` characters and cuts a single over-long
+  sentence hard. Defaults: 1500 / 100.
+- Two new plugin hooks in `Embedding\Base`:
+  - `chunkHeader(array $row) : string`, default `"[<app>] <title>\n"`, prefixed to every chunk.
+    Changing it re-embeds the whole app, so keep it short and stable.
+  - `getParts(array $row, bool $fulltext) : iterable` yields `['part', 'text', 'title'?, 'modified'?,
+    'header'?]`; the entry's own text is always part `''`. Parts no longer returned are deleted from
+    both indexes. This is the seam the file indexing will use.
+- Tracker replies are parts (`reply:<id>`) with the ticket's header, no longer concatenated into
+  `ft_extra`. Empty replies are skipped. `processRow()` remembers `tr_edit_mode` for `getParts()`.
+- Addressbook keeps `n_fileas` for RAG, so the note's chunks carry the contact's name.
+- `embed()` sends all chunks of all parts of an entry in one request.
+- `searchFulltext()` had to become entry-level too (`MAX(relevance) … GROUP BY ft_app, ft_app_id`,
+  texts joined from part `''`), because an entry now has several fulltext rows.
+- Fixed on the way: `Base::getUpdated()` used `$entries ?` instead of `isset($entries)`, which warned
+  on every row of the async job.
+- Update 26.1.003 empties `egw_rag` and drops the tracker fulltext rows (replies moved out of
+  `ft_extra`), then installs the async job. Tracker's fulltext search is degraded until it has run.
+- Tested with stubs: a ticket with two replies produces the expected fulltext and embedding rows per
+  part, excess chunks and vanished parts are deleted, one endpoint request per entry; the splitter
+  keeps the header on every chunk, respects the size, overlaps, never produces invalid UTF-8 and cuts
+  over-long sentences. Entry-level fulltext grouping over parts verified in SQL on a scratch DB.
 
 ## Phase 4 (optional): fulltext tightening
 

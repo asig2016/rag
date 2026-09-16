@@ -27,6 +27,7 @@ higher is better	rag	en	higher is better
 hybrid search (rag+fulltext)	rag	en	Hybrid search (RAG + Fulltext)
 hybrid search: rag+fulltext	rag	en	Hybrid search: RAG+Fulltext
 identical	rag	en	identical
+in characters, incl. the context prefixed to every chunk. changing it re-embeds everything!	rag	en	In characters, incl. the context prefixed to every chunk. Changing it re-embeds everything!
 last errors of rag's async job	rag	en	Last errors of RAG's async job
 leave empty to disable rag	rag	en	leave empty to disable RAG
 legacy search	rag	en	Legacy search

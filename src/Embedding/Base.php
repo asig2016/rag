@@ -119,6 +119,40 @@ abstract class Base
 	}
 
 	/**
+	 * Context prefixed to every chunk of an entry
+	 *
+	 * Without it only the first chunk of a long text tells which entry it belongs to, and the following ones
+	 * can not be matched by e.g. the subject of the entry.
+	 * Reimplement it to add app-specific context like a sender or a category, but keep it short and stable:
+	 * changing it re-embeds every entry of the app!
+	 *
+	 * @param array $row
+	 * @return string e.g. "[tracker] Can not print invoices\n"
+	 */
+	public function chunkHeader(array $row) : string
+	{
+		$title = trim((string)($row[static::TITLE] ?? ''));
+
+		return '['.static::APP.']'.($title !== '' ? ' '.$title : '')."\n";
+	}
+
+	/**
+	 * Parts of an entry to index on their own, e.g. replies or files
+	 *
+	 * The entry's own text is always indexed as part '', these are additional ones. Returning fewer parts than
+	 * the last run removes the ones no longer returned from both indexes.
+	 *
+	 * @param array $row as returned by getUpdated()
+	 * @param bool $fulltext false: for the RAG/embeddings, true: for the fulltext index
+	 * @return iterable of arrays with keys part (e.g. "reply:123" or "file:<fs_id>"), text and optional
+	 *  title, modified and header (defaulting to the ones of the entry)
+	 */
+	public function getParts(array $row, bool $fulltext=false) : iterable
+	{
+		return [];
+	}
+
+	/**
 	 * Get updated / not yet indexed app-entries
 	 *
 	 * Should only be overwritten in plugin classes if processRow is not sufficient!.
@@ -166,7 +200,7 @@ abstract class Base
 				{
 					// hook-data is in user-timezone, while queried data is in server-timezone
 					$row[static::MODIFIED] = new Api\DateTime(static::MODIFIED_TYPE === 'int' && is_numeric($row[static::MODIFIED]) ?
-						(int)$row[static::MODIFIED] : $row[static::ID], $entries ? Api\DateTime::$user_timezone : Api\DateTime::$server_timezone);
+						(int)$row[static::MODIFIED] : $row[static::ID], isset($entries) ? Api\DateTime::$user_timezone : Api\DateTime::$server_timezone);
 				}
 				$this->processRow($row, $fulltext);
 				$row = $this->getExtraTexts($row[static::ID], $row, $hook_data['data']??null);

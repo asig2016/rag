@@ -58,11 +58,14 @@
 				</row>
 				<row>
 					<et2-description  value="Chunk size"></et2-description>
-					<et2-number  id="newsettings[chunk_size]" min="100" placeholder="500" precision="0"></et2-number>
+					<et2-hbox>
+						<et2-number  id="newsettings[chunk_size]" min="200" placeholder="1500" precision="0"></et2-number>
+						<et2-description  label="In characters, incl. the context prefixed to every chunk. Changing it re-embeds everything!"></et2-description>
+					</et2-hbox>
 				</row>
 				<row>
 					<et2-description  value="Chunk overlap"></et2-description>
-					<et2-number  id="newsettings[chunk_overlap]" min="0" placeholder="50" precision="0"></et2-number>
+					<et2-number  id="newsettings[chunk_overlap]" min="0" placeholder="100" precision="0"></et2-number>
 				</row>
 				<row>
 					<et2-description  value="Minimize chunks e.g. concatenate title and description"></et2-description>
