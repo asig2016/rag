@@ -27,6 +27,7 @@ higher is better	rag	de	größer ist besser
 hybrid search (rag+fulltext)	rag	de	Hybride Suche (RAG+Volltext)
 hybrid search: rag+fulltext	rag	de	Hybride Suche: RAG + Volltext
 identical	rag	de	identisch
+in characters, incl. the context prefixed to every chunk. changing it re-embeds everything!	rag	de	In Zeichen, inkl. des jedem Chunk vorangestellten Kontexts. Eine Änderung berechnet alle Embeddings neu!
 last errors of rag's async job	rag	de	Letzte Fehler des asynchronen Jobs des RAG's
 leave empty to disable rag	rag	de	Leer lassen um das RAG auszuschalten
 legacy search	rag	de	Legacy Suche

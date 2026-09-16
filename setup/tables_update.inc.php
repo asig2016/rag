@@ -120,3 +120,26 @@ function rag_upgrade26_1_001()
 
 	return $GLOBALS['setup_info']['rag']['currentver'] = '26.1.002';
 }
+
+
+/**
+ * Search quality, part 3: bigger, boundary-aware chunks, each prefixed with the context of its entry
+ *
+ * Every chunk changes, so all embeddings have to be calculated again. Tracker replies move from the
+ * ft_extra column of their ticket into own parts, therefore its fulltext rows are dropped too.
+ *
+ * @return string
+ */
+function rag_upgrade26_1_002()
+{
+	/** @var Api\Db $db */
+	$db = $GLOBALS['egw_setup']->db;
+
+	$db->query('DELETE FROM egw_rag', __LINE__, __FILE__);
+	$db->query("DELETE FROM egw_rag_fulltext WHERE ft_app='tracker'", __LINE__, __FILE__);
+
+	// the async job calculates the new embeddings, it removes itself once it is done
+	Rag\Embedding::installAsyncJob();
+
+	return $GLOBALS['setup_info']['rag']['currentver'] = '26.1.003';
+}

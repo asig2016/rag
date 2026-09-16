@@ -66,8 +66,8 @@ class Addressbook extends Base
 	{
 		if (!$fulltext)
 		{
-			// only index description/note for RAG
-			$row = array_intersect_key($row, array_flip([self::ID, self::MODIFIED, self::DESCRIPTION]));
+			// only index description/note for RAG, but keep the title/n_fileas for the chunk-header
+			$row = array_intersect_key($row, array_flip([self::ID, self::MODIFIED, self::TITLE, self::DESCRIPTION]));
 		}
 	}
 }

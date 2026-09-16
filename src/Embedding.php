@@ -82,11 +82,11 @@ class Embedding
 	/**
 	 * @var int max size of chunk
 	 */
-	protected static int $chunk_size = 500;
+	protected static int $chunk_size = 1500;
 	/**
 	 * @var int overlap of chunks
 	 */
-	protected static int $chunk_overlap = 50;
+	protected static int $chunk_overlap = 100;
 	/**
 	 * @var string embedding model to use
 	 */
@@ -216,8 +216,8 @@ class Embedding
 		self::$url = $config['url'] ?? null;
 		self::$api_key = $config['api_key'] ?? null;
 
-		self::$chunk_size = $config['chunk_size'] ?? 500;
-		self::$chunk_overlap = $config['chunk_overlap'] ?? 50;
+		self::$chunk_size = (int)($config['chunk_size'] ?? 1500) ?: 1500;
+		self::$chunk_overlap = (int)($config['chunk_overlap'] ?? 100);
 		self::$model = $config['embedding_model'] ?? 'bge-m3';
 		self::$minimize_chunks = ($config['minimize_chunks'] ?? 'yes') !== 'no';
 		self::$max_distance = is_numeric($config['max_distance'] ?? null) && $config['max_distance'] > 0 ? (float)$config['max_distance'] : .4;
@@ -633,49 +633,89 @@ class Embedding
 						$modified = array_shift($extra);
 						$title = array_shift($extra);
 						$description = array_shift($extra);
+						// context prefixed to every chunk, so a chunk in the middle of a long text stays attributable
+						$header = $plugin->chunkHeader($entry);
+						$parts = ['' => [
+							'title'       => $title,
+							'description' => $description,
+							'extra'       => $extra,
+							'modified'    => $modified,
+							'header'      => $header,
+						]];
+						// separately indexed parts of the entry, e.g. replies or files
+						foreach($plugin->getParts($entry, (bool)$fulltext) as $part)
+						{
+							$parts[$part['part']] = [
+								'title'       => $part['title'] ?? $title,
+								'description' => $part['text'] ?? null,
+								'extra'       => [],
+								'modified'    => $part['modified'] ?? $modified,
+								'header'      => $part['header'] ?? $header,
+							];
+						}
 						try
 						{
-							// fulltext index or RAG/embeddings
-							if ($fulltext)
+							$chunks = $responses = [];
+							foreach($parts as $name => $part)
 							{
-								$extra_ft = $extra ? array_values(array_filter(array_map('trim', $extra), static function ($v) {
-									return $v && strlen((string)$v) > 3;
-								})) : null;
-								if (!$extra_ft || count($extra_ft) <= 1)
+								// fulltext index or RAG/embeddings
+								if ($fulltext)
 								{
-									$extra_ft = $extra_ft ? $extra_ft[0] : null;
+									$extra_ft = $part['extra'] ? array_values(array_filter(array_map('trim', $part['extra']), static function ($v) {
+										return $v && strlen((string)$v) > 3;
+									})) : null;
+									if (!$extra_ft || count($extra_ft) <= 1)
+									{
+										$extra_ft = $extra_ft ? $extra_ft[0] : null;
+									}
+									else
+									{
+										$extra_ft = json_encode($extra_ft,
+											JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_IGNORE | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_LINE_TERMINATORS);
+									}
+									$this->db->insert(self::FULLTEXT_TABLE, [
+										self::FULLTEXT_TITLE => $part['title'] ?: null,
+										self::FULLTEXT_DESCRIPTION => $part['description'] ?: null,
+										self::FULLTEXT_EXTRA => $extra_ft,
+										self::FULLTEXT_MODIFIED => $part['modified'],
+									], [
+										self::FULLTEXT_APP => $app,
+										self::FULLTEXT_APP_ID => $id,
+										self::FULLTEXT_PART => $name,
+									], __LINE__, __FILE__, self::APP);
+									continue;
+								}
+								if (self::$minimize_chunks)
+								{
+									$chunks[$name] = self::chunkSplit(implode("\n", array_filter(
+										array_merge([$part['description']], array_values($part['extra'])))), $part['header']);
 								}
 								else
 								{
-									$extra_ft = json_encode($extra_ft,
-										JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_IGNORE | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_LINE_TERMINATORS);
+									// embed the description and each reply or CF on its own
+									$chunks[$name] = [];
+									foreach(array_merge([$part['description']], array_values($part['extra'])) as $text)
+									{
+										$chunks[$name] = self::chunkSplit($text, $part['header'], $chunks[$name]);
+									}
 								}
-								$this->db->insert(self::FULLTEXT_TABLE, [
-									self::FULLTEXT_TITLE => $title ?: null,
-									self::FULLTEXT_DESCRIPTION => $description ?: null,
-									self::FULLTEXT_EXTRA => $extra_ft,
-									self::FULLTEXT_MODIFIED => $modified,
-								], [
-									self::FULLTEXT_APP => $app,
-									self::FULLTEXT_APP_ID => $id,
-									self::FULLTEXT_PART => '',
-								], __LINE__, __FILE__, self::APP);
-								//continue;
 							}
-							if (self::$minimize_chunks)
+							if (!$fulltext)
 							{
-								$chunks = self::chunkSplit($title . "\n" . $description.($extra ? "\n" . implode("\n", $extra) : ""));
-							}
-							else
-							{
-								$chunks = self::chunkSplit($description, [$title]);
-								// embed each reply or $cfs on its own
-								foreach ($extra as $field)
+								// one request for all chunks of all parts of the entry
+								$flat = [];
+								foreach($chunks as $name => $part_chunks)
 								{
-									$chunks = self::chunkSplit($field, $chunks);
+									foreach($part_chunks as $n => $chunk)
+									{
+										$flat[$name.':'.$n] = $chunk;
+									}
+								}
+								foreach($this->create($flat) as $embedding)
+								{
+									$responses[$embedding->chunk] = $embedding;
 								}
 							}
-							$response = $this->create($chunks);
 						}
 						catch (\Throwable $e)
 						{
@@ -689,26 +729,39 @@ class Embedding
 							unset($e);
 							continue;
 						}
-						$n = -1;
-						foreach ($response as $n => $embedding)
+						if (!$fulltext)
 						{
-							$this->db->insert(self::TABLE, [
-								self::EMBEDDING => $embedding->embedding,
-								self::EMBEDDING_HASH => $embedding->sha256,
-								self::EMBEDDING_MODIFIED => $modified,
-							], [
-								self::EMBEDDING_APP => $app,
-								self::EMBEDDING_APP_ID => $id,
-								self::EMBEDDING_PART => '',
-								self::EMBEDDING_CHUNK => $n,
-							], __LINE__, __FILE__, self::APP);
+							foreach($chunks as $name => $part_chunks)
+							{
+								$n = -1;
+								foreach($part_chunks as $n => $chunk)
+								{
+									$this->db->insert(self::TABLE, [
+										self::EMBEDDING => $responses[$chunk]->embedding,
+										self::EMBEDDING_HASH => $responses[$chunk]->sha256,
+										self::EMBEDDING_MODIFIED => $parts[$name]['modified'],
+									], [
+										self::EMBEDDING_APP => $app,
+										self::EMBEDDING_APP_ID => $id,
+										self::EMBEDDING_PART => $name,
+										self::EMBEDDING_CHUNK => $n,
+									], __LINE__, __FILE__, self::APP);
+								}
+								// delete excess old chunks, if there are any
+								$this->db->delete(self::TABLE, [
+									self::EMBEDDING_APP => $app,
+									self::EMBEDDING_APP_ID => $id,
+									self::EMBEDDING_PART => $name,
+									self::EMBEDDING_CHUNK . '>' . $n,
+								], __LINE__, __FILE__, self::APP);
+							}
 						}
-						// delete excess old chunks, if there are any
-						$this->db->delete(self::TABLE, [
-							self::EMBEDDING_APP => $app,
-							self::EMBEDDING_APP_ID => $id,
-							self::EMBEDDING_PART => '',
-							self::EMBEDDING_CHUNK . '>' . $n,
+						// remove parts the entry no longer has, e.g. a deleted reply
+						$this->db->delete($fulltext ? self::FULLTEXT_TABLE : self::TABLE, [
+							($fulltext ? self::FULLTEXT_APP : self::EMBEDDING_APP) => $app,
+							($fulltext ? self::FULLTEXT_APP_ID : self::EMBEDDING_APP_ID) => $id,
+							'NOT '.$this->db->expression($fulltext ? self::FULLTEXT_TABLE : self::TABLE,
+								[($fulltext ? self::FULLTEXT_PART : self::EMBEDDING_PART) => array_keys($parts)]),
 						], __LINE__, __FILE__, self::APP);
 					}
 				}
@@ -1175,18 +1228,9 @@ class Embedding
 				break;
 		}
 		$match = 'MATCH('.self::FULLTEXT_TITLE.','.self::FULLTEXT_DESCRIPTION.','.self::FULLTEXT_EXTRA.') AGAINST('.$this->db->quote($pattern).' '.$mode.')';
-		$cols = [
-			self::FULLTEXT_APP,
-			self::FULLTEXT_APP_ID,
-			$match.' AS relevance',
-			self::FULLTEXT_MODIFIED.' AS modified',
-		];
-		if ($return_all)
-		{
-			$cols[] = self::FULLTEXT_TITLE.' AS title';
-			$cols[] = self::FULLTEXT_DESCRIPTION.' AS description';
-			$cols[] = self::FULLTEXT_EXTRA.' AS extra';
-		}
+		$where = [];
+		if ($app) $where[] = $this->db->expression(self::FULLTEXT_TABLE, [self::FULLTEXT_APP => $app]);
+		if ($app_ids) $where[] = self::FULLTEXT_APP_ID.' IN ('.implode(',', array_map('intval', $app_ids)).')';
 		$order = self::validateOrder($order, '!relevance');
 		try {
 			if ($min_relevance)
@@ -1196,32 +1240,41 @@ class Embedding
 					__LINE__, __FILE__, 0, 'ORDER BY relevance DESC', self::APP, 1)->fetchColumn();
 				$min_relevance *= $max_relevance;
 			}
-			$id_relevance = [];
-			foreach ($this->db->select(self::FULLTEXT_TABLE, 'SQL_CALC_FOUND_ROWS ' . implode(',', $cols),
-				($app ? [self::FULLTEXT_APP => $app] : []) + [$match . ' > '.$min_relevance] + ($app_ids ? [self::FULLTEXT_APP_ID .' IN ('.implode(',',$app_ids).')'] : [] ),
-				__LINE__, __FILE__, $start, 'ORDER BY '.$order, self::APP, $num_rows) as $row)
+			// an entry can have several rows / parts, e.g. replies or files: the best matching one counts,
+			// so every entry uses one row of the requested page and of the total, like in searchEmbeddings()
+			$matches = 'SELECT '.self::FULLTEXT_APP.','.self::FULLTEXT_APP_ID.','.$match.' AS relevance,'.
+				self::FULLTEXT_MODIFIED.' FROM '.self::FULLTEXT_TABLE.
+				' WHERE '.implode(' AND ', array_merge($where, [$match.' > '.(float)$min_relevance]));
+			$entries = 'SELECT '.self::FULLTEXT_APP.','.self::FULLTEXT_APP_ID.',MAX(relevance) AS relevance,MAX('.
+				self::FULLTEXT_MODIFIED.') AS modified FROM ('.$matches.') matches'.
+				' GROUP BY '.self::FULLTEXT_APP.','.self::FULLTEXT_APP_ID;
+
+			$cols = ['entries.*'];
+			$join = '';
+			if ($return_all)
 			{
-				if ($row['relevance'] < $min_relevance)
-				{
-					if ($order !== 'relevance DESC')
-					{
-						continue;
-					}
-					else
-					{
-						break;
-					}
-				}
+				$cols[] = self::FULLTEXT_TITLE.' AS title';
+				$cols[] = self::FULLTEXT_DESCRIPTION.' AS description';
+				$cols[] = self::FULLTEXT_EXTRA.' AS extra';
+				// texts of the entry itself, not of the part which matched
+				$join = ' LEFT JOIN '.self::FULLTEXT_TABLE.' ON entries.'.self::FULLTEXT_APP.'='.self::FULLTEXT_TABLE.'.'.self::FULLTEXT_APP.
+					' AND entries.'.self::FULLTEXT_APP_ID.'='.self::FULLTEXT_TABLE.'.'.self::FULLTEXT_APP_ID.
+					' AND '.self::FULLTEXT_TABLE.'.'.self::FULLTEXT_PART."=''";
+			}
+			$id_relevance = [];
+			foreach ($this->db->query('SELECT SQL_CALC_FOUND_ROWS '.implode(',', $cols).' FROM ('.$entries.') entries'.$join.
+				' ORDER BY '.$order, __LINE__, __FILE__, $start, $num_rows) as $row)
+			{
 				$id = $app && is_string($app) ? (int)$row[self::FULLTEXT_APP_ID] : $row[self::FULLTEXT_APP] . ':' . $row[self::FULLTEXT_APP_ID];
 				$id_relevance[$id] = $return_all ? [
 					'relevance' => (float)$row['relevance'],
 					'modified' => new Api\DateTime($row['modified'], Api\DateTime::$server_timezone),
-					'title' => $row['title'],
-					'description' => $row['description'],
-					'extra' => $row['extra'] ? (array)json_decode($row['extra'], true) : [],
+					'title' => $row['title'] ?? null,
+					'description' => $row['description'] ?? null,
+					'extra' => !empty($row['extra']) ? (array)json_decode($row['extra'], true) : [],
 				] : (float)$row['relevance'];
 			}
-			$this->total = $this->db->query('SELECT FOUND_ROWS()')->fetchColumn();
+			$this->total = (int)$this->db->query('SELECT FOUND_ROWS()')->fetchColumn();
 		}
 		catch (InvalidSql $e) {
 			_egw_log_exception($e);
@@ -1295,25 +1348,49 @@ class Embedding
 	}
 
 	/**
-	 * Split description into chunks
+	 * Split a text into chunks of max. self::$chunk_size characters, each prefixed with $header
 	 *
-	 * Using self::$chunk_size and an overlap of self::$chunk_overlap.
+	 * Splits on paragraph and then sentence boundaries, so a chunk is a meaningful piece of text,
+	 * and overlaps consecutive chunks by self::$chunk_overlap characters.
 	 *
-	 * @param ?string $description
-	 * @param array $chunks additional chunks, e.g. title
+	 * @param ?string $text
+	 * @param string $header context prefixed to every chunk, e.g. "[tracker] Ticket subject\n"
+	 * @param array $chunks chunks to add to
 	 * @return array of chunks
 	 */
-	protected static function chunkSplit(?string $description, array $chunks=[])
+	protected static function chunkSplit(?string $text, string $header='', array $chunks=[])
 	{
-		if (!$description || !trim($description)) return $chunks;    // nothing to do
+		if (!isset($text) || !trim($text)) return $chunks;    // nothing to do
 
-		// count characters, not bytes, substr() would cut multibyte utf-8 characters in half
-		$n = 0;
-		while(mb_strlen($chunk = mb_substr($description, $n*(self::$chunk_size-self::$chunk_overlap),
-			self::$chunk_size)) > self::$chunk_overlap || !$n)
+		// always leave room for some text, even if the header is long
+		$size = max(200, self::$chunk_size - mb_strlen($header));
+		$overlap = min(self::$chunk_overlap, (int)($size / 4));
+
+		$buffer = '';
+		foreach(preg_split('/(?<=[.!?;:])\s+|\n+/u', trim($text), -1, PREG_SPLIT_NO_EMPTY) as $sentence)
 		{
-			$chunks[] = $chunk;
-			$n++;
+			// a single sentence longer than the chunk-size has to be cut hard
+			while (mb_strlen($sentence) > $size)
+			{
+				if ($buffer !== '')
+				{
+					$chunks[] = $header.$buffer;
+					$buffer = '';
+				}
+				$chunks[] = $header.mb_substr($sentence, 0, $size);
+				$sentence = mb_substr($sentence, $size - $overlap);
+			}
+			if ($buffer !== '' && mb_strlen($buffer) + 1 + mb_strlen($sentence) > $size)
+			{
+				$chunks[] = $header.$buffer;
+				// start the next chunk with the tail of the previous one, to not lose context at the boundary
+				$buffer = $overlap ? ltrim(mb_substr($buffer, -$overlap)) : '';
+			}
+			$buffer .= ($buffer === '' ? '' : ' ').$sentence;
+		}
+		if (trim($buffer) !== '')
+		{
+			$chunks[] = $header.$buffer;
 		}
 		return $chunks;
 	}
