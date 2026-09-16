@@ -1,11 +1,11 @@
 # RAG: search quality
 
-## Status: phase 1 implemented (2026-09-15), not yet run against a real embedding endpoint
+## Status: phases 1-2 implemented (2026-09-15/16), not yet run against a real embedding endpoint
 
 | Phase | Topic | Status |
 |---|---|---|
 | 1 | Bug fixes + schema (vector index, cache table, parts) | implemented, see "Phase 1 notes" |
-| 2 | Hybrid ranking with Reciprocal Rank Fusion | open |
+| 2 | Hybrid ranking with Reciprocal Rank Fusion | implemented, see "Phase 2 notes" |
 | 3 | Chunking + chunk context (forces a re-index) | open |
 | 4 | Fulltext tightening for multi-word queries (optional) | open |
 | 5 | Cross-encoder reranker (optional per install) | open |
@@ -150,6 +150,22 @@ attached or linked files.
   hard-coded 200 in `search2criteria()`).
 - `search2criteria()` takes an optional `?array $app_ids`, so plugins with their own list code can
   reuse it and `orderByIds()` / `distanceById()` instead of copying them.
+
+### Phase 2 notes (2026-09-16)
+
+- Depth of both sub-searches: `max($start + $num_rows, 100)`; `total` = both totals minus the overlap
+  of the fetched rows (still an estimate).
+- `search()` passed `$app_ids` only in the fulltext-only branch before; both sub-searches get it now.
+- An exception of the embedding endpoint is logged and the hybrid search returns the fulltext result
+  alone (SQL errors still throw).
+- Order `default` = fused score. `distance`, `relevance` and `modified` sort the fused rows (only with
+  `$return_all`); rows without that value, e.g. no distance for a fulltext-only match, go to the end.
+  Rows carry `distance`, `relevance` and `score`.
+- `$return_all=false` returns the fused score, so the `distance` extra column `search2criteria()` adds
+  is a score (higher is better) for hybrid searches.
+- Config page: `max_distance` (default .4) and `search_depth` (default 200), en/de translations.
+- Tested with stubbed sub-searches: fused order, paging, total, sort by modified/distance/relevance,
+  `$app_ids` pass-through, endpoint failure fallback, stable order of equal scores.
 
 ## Phase 3: chunking + context (re-index)
 

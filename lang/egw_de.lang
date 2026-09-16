@@ -1,3 +1,4 @@
+0 = identical, 2 = opposite meaning, default 0.4	rag	de	0 = identisch, 2 = gegenteilige Bedeutung, Vorgabe 0,4
 all supported	rag	de	Alle unterstützten
 always use relevance	rag	de	Immer Relevanz verwenden
 anything enclosed in the double quotes is taken as a whole (so you can match phrases, for example).	rag	de	Alles, was in doppelten Anführungszeichen steht, wird als Ganzes betrachtet (so können Sie beispielsweise Phrasen abgleichen)
@@ -30,11 +31,13 @@ last errors of rag's async job	rag	de	Letzte Fehler des asynchronen Jobs des RAG
 leave empty to disable rag	rag	de	Leer lassen um das RAG auszuschalten
 legacy search	rag	de	Legacy Suche
 legacy search, as used before	rag	de	Legacy-Suche, wie zuvor verwendet
+max. distance of a semantic match	rag	de	Max. Abstand eines semantischen Treffers
 max. runtime	rag	de	Max. Ausführungszeit
 minimize chunks e.g. concatenate title and description	rag	de	Minimiere die Chunks z.B. durch aneinander hängen von Titel und Beschreibung
 model to use	rag	de	Benutztes Model
 no match	rag	de	kein Treffer
 no, use search-order chosen in app	rag	de	Nein, verwende die Sortierung die in der App gewählt wurde
+number of results for the search in the applications' lists	rag	de	Anzahl der Treffer für die Suche in den Listen der Anwendungen
 opposite	rag	de	Gegenteil
 please note: ollama must be bound to all interfaces, not just localhost!	rag	de	Bitte beachten: Ollama muss auf allen Schnittstellen gebunden sein, NICHT nur auf localhost!
 query	rag	de	Suchanfrage
@@ -43,6 +46,7 @@ rag / semantic search	rag	de	RAG / Semantische Suche
 rag search	rag	de	RAG Suche
 rag search only	rag	de	RAG Suche ausschließlich
 relevance	rag	de	Relevanz
+search configuration	rag	de	Konfiguration der Suche
 search in which applications	rag	de	In welchen Anwendungen suchen
 should search in apps be ordered by relevance	rag	de	Solle die Suche in den Anwendungen nach Relevanz sortiert sein
 stop calculating embeddings after this time (in seconds). default: 285 (4min:45sec)	rag	de	Beende die Berechnung von Embeddings nach dieser Zeit (in Sekunden). Vorgabe (4min:45sec)

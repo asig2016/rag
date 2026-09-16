@@ -72,6 +72,20 @@
 					</et2-select>
 				</row>
 				<row>
+					<et2-description  value="Search configuration" span="all" class="subHeader"></et2-description>
+				</row>
+				<row>
+					<et2-description  value="Max. distance of a semantic match"></et2-description>
+					<et2-hbox>
+						<et2-number id="newsettings[max_distance]" min="0.05" max="2" precision="2" placeholder="0.4"></et2-number>
+						<et2-description label="0 = identical, 2 = opposite meaning, default 0.4"></et2-description>
+					</et2-hbox>
+				</row>
+				<row>
+					<et2-description  value="Number of results for the search in the applications' lists"></et2-description>
+					<et2-number id="newsettings[search_depth]" min="50" max="5000" precision="0" placeholder="200"></et2-number>
+				</row>
+				<row>
 					<et2-description  value="Async Job Settings (Cron Schedule): Leave empty to use defaults."/>
 					<et2-hbox>
 						<et2-textbox  width="14%" id="newsettings[async_year]" label="Year"/>

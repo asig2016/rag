@@ -95,6 +95,18 @@ class Embedding
 	 * @var bool minimize number of chunks e.g. by concatenating title and describtion
 	 */
 	public static bool $minimize_chunks = true;
+	/**
+	 * @var float max. cosine distance of a chunk to count as semantic match (0 = identical, 2 = opposite)
+	 */
+	protected static float $max_distance = .4;
+	/**
+	 * @var int number of ids search2criteria() fetches for the apps' own list search
+	 */
+	protected static int $search_depth = 200;
+	/**
+	 * Constant k of Reciprocal Rank Fusion: bigger values weigh the top ranks of each list less
+	 */
+	const RRF_K = 60;
 
 	/**
 	 * @var int log-level: 0: errors only, 1: result of search*() methods
@@ -208,6 +220,8 @@ class Embedding
 		self::$chunk_overlap = $config['chunk_overlap'] ?? 50;
 		self::$model = $config['embedding_model'] ?? 'bge-m3';
 		self::$minimize_chunks = ($config['minimize_chunks'] ?? 'yes') !== 'no';
+		self::$max_distance = is_numeric($config['max_distance'] ?? null) && $config['max_distance'] > 0 ? (float)$config['max_distance'] : .4;
+		self::$search_depth = (int)($config['search_depth'] ?? 200) ?: 200;
 		// the cast has to happen after ??, (int)null is 0 and would stop embed() after the first entry
 		self::$max_runtime = (int)($config['async_maxruntime'] ?? 285) ?: 285;
 
@@ -279,9 +293,10 @@ class Embedding
 	 * @param $order_by
 	 * @param $extra_cols
 	 * @param array $filter
+	 * @param ?int[] $app_ids optional limit the search to these ids of $app
 	 * @return bool false: search not available, or configured to be off, true: search available and implemented via changed parameters
 	 */
-	public static function search2criteria(string $app, string &$criteria, &$order_by, &$extra_cols, ?array &$filter) : bool
+	public static function search2criteria(string $app, string &$criteria, &$order_by, &$extra_cols, ?array &$filter, ?array $app_ids=null) : bool
 	{
 		$criteria_in = $criteria;
 		// Contacts class in API uses "api", but the app is / has to be "addressbook"
@@ -311,7 +326,7 @@ class Embedding
 		$rag = new self();
 		$search = $search === 'hybrid' ? 'search' : 'search'.ucfirst($search === 'rag' ? 'Embeddings' : $search);
 		try {
-			$ids = $rag->$search($criteria, $app, 0, 200);
+			$ids = $rag->$search($criteria, $app, 0, self::$search_depth, app_ids: $app_ids);
 		}
 		catch (InvalidFulltextSyntax $e) {
 			Api\Json\Response::get()->message($e->getMessage(), 'error');
@@ -327,6 +342,7 @@ class Embedding
 			$order_by = self::orderByIds($ids, $plugin->table() . '.' . $plugin->id());
 		}
 		if (!is_array($extra_cols)) $extra_cols = $extra_cols ? explode(',', $extra_cols) : [];
+		// the value is the cosine distance for "rag", the fulltext relevance for "fulltext" and the fused score (higher is better) for "hybrid"
 		$extra_cols[] = self::distanceById($ids, $plugin->table().'.'.$plugin->id()).' AS distance';
 		$criteria = null;
 		if (self::$log_level) error_log(__METHOD__."(app='$app', criteria='$criteria_in', ...) returning true --> $search found ".count($ids)." results");
@@ -820,76 +836,122 @@ class Embedding
 	/**
 	 * Hybrid search in RAG and fulltext index for given app and $pattern
 	 *
-	 * Returns found IDs and their distance ordered by the smallest distance / the best match first,
-	 * then the fulltext search results with the highest relevance first.
-	 * Same entries are only returned once with their embedding distance!.
+	 * Both searches run in their own best-first order and are merged with Reciprocal Rank Fusion:
+	 * every entry scores sum(1 / (RRF_K + rank)) over the lists it is found in, so an entry found by both searches
+	 * ranks high, and an exact keyword match is no longer pushed behind every semantic match.
+	 * @link https://mariadb.com/docs/server/reference/sql-structure/vectors/optimizing-hybrid-search-query-with-reciprocal-rank-fusion-rrf
 	 *
-	 * @ToDo: better way to merge fulltext and embedding searches https://mariadb.com/docs/server/reference/sql-structure/vectors/optimizing-hybrid-search-query-with-reciprocal-rank-fusion-rrf
+	 * If the embedding endpoint fails, the fulltext result is returned alone.
+	 *
 	 * @param string $pattern
 	 * @param ?string|string[] $app app-name(s) or '' or NULL for searching all apps
 	 * @param int $start default 0
 	 * @param int $num_rows default 50
-	 * @param bool $return_all true: return array with modified time, title, description, extra data and distance&relevance,
-	 *  false: only return distance and relevance value
-	 * @param string $order one of "default", "distance", "relevance" or "modified", optional with ASC or DESC suffix
-	 * @param float $max_distance default .4
+	 * @param bool $return_all true: return array with modified time, title, description, extra data, distance, relevance and score,
+	 *  false: only return the fused score
+	 * @param string $order one of "default" (fused score), "distance", "relevance" or "modified", optional with ASC or DESC suffix
+	 * @param ?float $max_distance default null: configured max_distance (.4)
 	 * @param float $min_relevance default 0.05 = 5% of highest match
-	 * @return float[]|array[] int id => float distance pairs, for $app === '' we return string "$app:$id"
-	 *  If there is no result, we return [0 => 1.0], to not generate an SQL error, but an empty result!
+	 * @param ?int[] $app_ids optional limit the search to these ids
+	 * @return float[]|array[] int id => float score (higher is better) pairs, for $app === '' we return string "$app:$id"
 	 * @throws Api\Db\Exception
 	 * @throws Api\Db\Exception\InvalidSql
 	 */
 	public function search(string $pattern, $app=null, int $start=0, int $num_rows=50, bool $return_all=false,
-	                       string $order='default', float $max_distance=.4, float $min_relevance=0.05, ?array $app_ids=null) : array
+	                       string $order='default', ?float $max_distance=null, float $min_relevance=0.05, ?array $app_ids=null) : array
 	{
 		if (!$this->client)
 		{
-			return $this->searchFulltext($pattern, $app, $start, $num_rows, $return_all, $order,0.05, null, $app_ids);
+			return $this->searchFulltext($pattern, $app, $start, $num_rows, $return_all, $order, $min_relevance, null, $app_ids);
 		}
-		// quick/dump approach for merging: always query from start=0, $start+$num_rows rows, and then slice
-		$embedding_matches = $this->searchEmbeddings($pattern, $app, 0, $start+$num_rows, $return_all, $order, $max_distance);
-		$total_embeddings = $this->total ?? 0;
+		// both lists need to reach at least as deep as the requested page, and a bit further to fuse sensibly
+		$depth = max($start + $num_rows, 100);
+		try {
+			$embedding_matches = $this->searchEmbeddings($pattern, $app, 0, $depth, $return_all, 'default', $max_distance, $app_ids);
+			$total_embeddings = $this->total ?? 0;
+		}
+		catch (InvalidSql $e) {
+			throw $e;
+		}
+		catch (\Exception $e) {
+			// embedding endpoint not reachable or failing: keep search working with the fulltext index
+			_egw_log_exception($e);
+			$embedding_matches = [];
+			$total_embeddings = 0;
+		}
+		$fulltext_matches = $this->searchFulltext($pattern, $app, 0, $depth, $return_all, 'default', $min_relevance, null, $app_ids);
+		$total_fulltext = $this->total ?? 0;
 
-		$fulltext_matches = $this->searchFulltext($pattern, $app, 0, $start+$num_rows, $return_all, $order, $min_relevance);
+		$scores = self::rrf([$embedding_matches, $fulltext_matches]);
 
-		// + makes sure to return every entry only once, with the embeddings first
-		$both = $return_all ? self::add_rows($embedding_matches, $fulltext_matches) : $embedding_matches+$fulltext_matches;
+		// we only know the overlap of the fetched rows, there might be more in common
+		$this->total = $total_embeddings + $total_fulltext -
+			(count($embedding_matches) + count($fulltext_matches) - count($scores));
 
-		// we can only subtract the entries found in both returned sets, but there might be more in common ...
-		$this->total += $total_embeddings - (count($embedding_matches)+count($fulltext_matches)-count($both));
-
-		if ($order !== 'default ASC')
+		if (!$return_all)
 		{
-			[$order, $sort] = explode(' ', self::validateOrder($order), 2);
-			// we can only order it by a different criteria if we got the data / $return_all === true
-			if ($return_all && $order !== 'default')
+			$both = $scores;
+		}
+		else
+		{
+			$both = [];
+			foreach($scores as $id => $score)
 			{
-				$sort_to_end = $sort === 'ASC' ? 1 : -1;
-				uasort($both, static function(array $a, array $b) use ($order, $sort_to_end)
+				// embedding row first, so its modified time and texts win, but add relevance from the fulltext row
+				$both[$id] = ($embedding_matches[$id] ?? []) + ($fulltext_matches[$id] ?? []) + ['score' => $score];
+			}
+		}
+
+		[$order, $sort] = explode(' ', self::validateOrder($order), 2);
+		if ($order !== 'default')
+		{
+			// we can only order it by a different criteria if we got the data / $return_all === true
+			if ($return_all)
+			{
+				// entries without the value, e.g. no distance for a fulltext-only match, always go to the end
+				uasort($both, static function(array $a, array $b) use ($order, $sort)
 				{
-					if (!isset($a[$order]))
+					if (!isset($a[$order]) || !isset($b[$order]))
 					{
-						return !isset($b[$order]) ? 0 : $sort_to_end;
+						return isset($a[$order]) ? -1 : (isset($b[$order]) ? 1 : 0);
 					}
-					if (!isset($b[$order]))
-					{
-						return -$sort_to_end;
-					}
-					return $a[$order] <=> $b[$order];
+					return $sort === 'ASC' ? $a[$order] <=> $b[$order] : $b[$order] <=> $a[$order];
 				});
 			}
-			if ($sort !== 'ASC')
-			{
-				$both = array_reverse($both, true);
-			}
+		}
+		elseif ($sort !== 'ASC')
+		{
+			$both = array_reverse($both, true);
 		}
 		$both = array_slice($both, $start, $num_rows, true);
 		if (self::$log_level)
 		{
-			error_log(__METHOD__."('$pattern', '$app', start=$start, num_rows=$num_rows, return_modified=$return_all, order=$order, max_distance=$max_distance) total=$this->total returning ".
+			error_log(__METHOD__."('$pattern', '".json_encode($app)."', start=$start, num_rows=$num_rows, return_all=$return_all, order=$order $sort, max_distance=$max_distance) total=$this->total returning ".
 				json_encode($both));
 		}
 		return $both;
+	}
+
+	/**
+	 * Reciprocal Rank Fusion of several best-first result lists
+	 *
+	 * @param array[] $lists arrays with ids as keys, best match first
+	 * @param int $k constant of the formula, default RRF_K
+	 * @return float[] id => fused score, best (highest) first
+	 */
+	public static function rrf(array $lists, int $k=self::RRF_K) : array
+	{
+		$scores = [];
+		foreach($lists as $list)
+		{
+			$rank = 0;
+			foreach(array_keys($list) as $id)
+			{
+				$scores[$id] = ($scores[$id] ?? 0.0) + 1.0 / ($k + ++$rank);
+			}
+		}
+		arsort($scores);    // sorting is stable since PHP 8.0: equal scores keep the order of first appearance
+		return $scores;
 	}
 
 	/**
@@ -930,15 +992,16 @@ class Embedding
 	 * @param bool $return_all true: return array with modified time, title, description, extra data and distance,
 	 * *  false: only return distance value
 	 * @param string $order one of "default", "distance", "relevance" or "modified", optional with ASC or DESC suffix
-	 * @param float $max_distance default .4
+	 * @param ?float $max_distance default null: configured max_distance (.4)
 	 * @param array $app_ids:  Optionally limit the the search to these specific app ids
 	 * @return float[] int id => float distance pairs for non-empty and string $app, empty $app or array we return string "$app:$id"
 	 * @throws Api\Db\Exception
 	 * @throws Api\Db\Exception\InvalidSql
 	 */
 	public function searchEmbeddings(string $pattern, $app=null, int $start=0, int $num_rows=50, bool $return_all=false,
-	                                 string $order='default', float $max_distance=.4, ?array $app_ids=null) : array
+	                                 string $order='default', ?float $max_distance=null, ?array $app_ids=null) : array
 	{
+		$max_distance ??= self::$max_distance;
 		// we remove boolean mode fulltext operators
 		if (preg_match(self::BOOLEAN_MODE_OPERATORS_PREG, $pattern))
 		{
