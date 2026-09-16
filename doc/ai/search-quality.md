@@ -1,13 +1,13 @@
 # RAG: search quality
 
-## Status: phases 1-3 implemented (2026-09-15/16), not yet run against a real embedding endpoint
+## Status: phases 1-4 implemented (2026-09-15/16), not yet run against a real embedding endpoint
 
 | Phase | Topic | Status |
 |---|---|---|
 | 1 | Bug fixes + schema (vector index, cache table, parts) | implemented, see "Phase 1 notes" |
 | 2 | Hybrid ranking with Reciprocal Rank Fusion | implemented, see "Phase 2 notes" |
 | 3 | Chunking + chunk context (forces a re-index) | implemented, see "Phase 3 notes" |
-| 4 | Fulltext tightening for multi-word queries (optional) | open |
+| 4 | Fulltext tightening for multi-word queries | implemented, see "Phase 4 notes" |
 | 5 | Cross-encoder reranker (optional per install) | open |
 
 Goal: better results from the hybrid (embeddings + InnoDB fulltext) search used by
@@ -214,6 +214,31 @@ attached or linked files.
   ones, dashed terms quoted as phrases.
 - No result → rerun with the old OR pattern.
 - Also consider a custom stopword table for non-English installs and `innodb_ft_min_token_size=2`.
+
+### Phase 4 notes (2026-09-16)
+
+- New `Embedding::requireAll($pattern)` prefixes every word of a boolean-mode pattern with `+`, and
+  `searchFulltext()` applies it when the user typed no operators himself (checked *before* the
+  wordstart asterisks are added) and the mode was not forced by the caller.
+- Left optional, because requiring them would find nothing:
+  - words shorter than `innodb_ft_min_token_size` (3)
+  - InnoDB's default stopwords (`INNODB_STOPWORDS`)
+  - **words containing a dot**: MariaDB tokenizes "Φ.Π.Α." into three single characters which are not
+    in the index, so such a word never matches in boolean mode, with or without `+` (verified in SQL);
+    requiring it would also kill the matches of the other words of the query
+- A word with a dash is quoted (`+"e-mail"`), the dash would otherwise exclude everything containing
+  the part behind it (verified in SQL: unquoted `+e-mail* +server*` finds nothing).
+- If the "all words" query returns nothing, `searchFulltext()` retries once with the original pattern
+  and `$require_all=false`, which is exactly the previous behaviour. The retry passes the
+  *fraction* `min_relevance`, not the absolute threshold computed in the first pass.
+- Verified in SQL on a scratch DB: "Rechnung* Kunde*" matched 3 of 5 rows, "+Rechnung* +Kunde*"
+  matches 2; the Greek query still matches with its dotted abbreviation left optional; a pattern
+  whose words never appear together matches nothing and is what triggers the fallback.
+- Tested with stubs: pattern rewriting (9 cases incl. phrases, stopwords, short, dashed and multibyte
+  words), the fallback firing exactly once on an empty result, no retry when there is a result or only
+  one required word, user operators and natural-language mode untouched.
+- Not done: a preference to switch this off. The fallback makes it hard to notice a downside, so it
+  can be added if a user complains.
 
 ## Phase 5 (optional per install): cross-encoder reranker
 

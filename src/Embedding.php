@@ -1222,13 +1222,19 @@ class Embedding
 	 * @param ?string $mode default null, check for BOOLEAN mode operators in $pattern: +-<>()~*",
 	 *  or 'IN BOOLEAN MODE', 'IN NATURAL LANGUAGE MODE', 'WITH QUERY EXPANSION'
 	 * @param array $app_ids:  Optionally limit the the search to these specific app ids
+	 * @param bool $require_all true: every word of the pattern has to match (see requireAll()), false: any of them
 	 * @return float[] int id => float relevance pairs for non-empty and string $app, empty $app or array we return string "$app:$id"
 	 * @throws Api\Db\Exception
 	 * @throws Api\Db\Exception\InvalidSql
 	 */
 	public function searchFulltext(string $pattern, $app=null, int $start=0, int $num_rows=50, bool $return_all=false,
-	                               string $order='default', float $min_relevance=0.05, ?string $mode=null, ?array $app_ids=null) : array
+	                               string $order='default', float $min_relevance=0.05, ?string $mode=null, ?array $app_ids=null,
+	                               bool $require_all=true) : array
 	{
+		$pattern_in = $pattern;
+		$min_relevance_in = $min_relevance;
+		// did the user use operators himself, then we do not touch the pattern (checked before we add asterisks)
+		$user_operators = (bool)preg_match(self::BOOLEAN_MODE_OPERATORS_PREG, $pattern);
 		// To find word(s) with a dash inside e.g. domain-names or ending with one (gives a FT syntax error!),
 		// we must NOT use boolean mode, but natural language mode.
 		// Because in boolean mode it will never match because the dash before the 2nd word will exclude all matches with that word :(
@@ -1247,6 +1253,11 @@ class Embedding
 				preg_replace_callback('/("([^"]+)"|'.$word.')/ui',
 					fn($m) => $m[1][0] === '"' ? $m[1] : preg_replace('/('.$word.')( |$|\))/ui', '$1*$2', $m[1]),
 					$pattern));
+		}
+		// require every word, instead of matching entries containing just one of them
+		if (!$mode && !$user_operators && $require_all)
+		{
+			$pattern = self::requireAll($pattern);
 		}
 		switch(strtoupper($mode??''))
 		{
@@ -1306,6 +1317,14 @@ class Embedding
 				] : (float)$row['relevance'];
 			}
 			$this->total = (int)$this->db->query('SELECT FOUND_ROWS()')->fetchColumn();
+
+			// nothing matches all the words --> fall back to the previous behaviour of matching any of them
+			if (!$id_relevance && !$user_operators && $require_all && substr_count($pattern, '+') > 1)
+			{
+				// $min_relevance is the absolute threshold by now, the parameter is a fraction of the best match
+				return $this->searchFulltext($pattern_in, $app, $start, $num_rows, $return_all, $order,
+					$min_relevance_in, $mode, $app_ids, false);
+			}
 		}
 		catch (InvalidSql $e) {
 			_egw_log_exception($e);
@@ -1321,6 +1340,58 @@ class Embedding
 				json_encode($id_relevance));
 		}
 		return $id_relevance;
+	}
+
+	/**
+	 * InnoDB's default stopword list: these words are not in the index and requiring one finds nothing
+	 *
+	 * @link https://mariadb.com/docs/server/ha-and-performance/optimization-and-tuning/optimization-and-indexes/full-text-indexes/stopwords
+	 */
+	const INNODB_STOPWORDS = ['a','about','an','are','as','at','be','by','com','de','en','for','from','how','i','in',
+		'is','it','la','of','on','or','that','the','this','to','was','what','when','where','who','will','with','und',
+		'www'];
+
+	/**
+	 * Below this length a word is not in the fulltext index (innodb_ft_min_token_size)
+	 */
+	const INNODB_MIN_TOKEN_SIZE = 3;
+
+	/**
+	 * Require every word of a boolean mode pattern, by prefixing it with a "+"
+	 *
+	 * Without it MariaDB's boolean mode matches an entry containing just one of the words, which in a
+	 * groupware means everything containing e.g. "invoice", while the entries containing all words are
+	 * only ranked a bit higher - and are lost completely, if the list is sorted by date or the result is
+	 * cut off by a limit.
+	 *
+	 * Left alone are words the index does not contain anyway (shorter than innodb_ft_min_token_size or a
+	 * stopword), as requiring them would find nothing. A word containing a dash is quoted: in boolean
+	 * mode the dash would otherwise exclude everything containing the part behind it.
+	 *
+	 * @param string $pattern
+	 * @return string
+	 */
+	public static function requireAll(string $pattern) : string
+	{
+		return preg_replace_callback('/"[^"]*"|[\pL\pN][\pL\pN._-]*\*?/u', static function(array $matches)
+		{
+			$word = $matches[0];
+			if ($word[0] === '"')
+			{
+				return strlen($word) > 2 ? '+'.$word : $word;    // a phrase is always required
+			}
+			$bare = rtrim($word, '*');
+			// a word with a dot is tokenized into its parts, e.g. the Greek "Φ.Π.Α." into three single
+			// characters, which are not in the index: such a word never matches in boolean mode, with or
+			// without a "+", but requiring it would also kill the matches of the other words
+			if (mb_strlen($bare) < self::INNODB_MIN_TOKEN_SIZE || strpos($bare, '.') !== false ||
+				in_array(mb_strtolower($bare), self::INNODB_STOPWORDS, true))
+			{
+				return $word;
+			}
+			// a dash inside the word is the "exclude" operator in boolean mode --> quote the word
+			return '+'.(strpos($bare, '-') !== false ? '"'.$bare.'"' : $word);
+		}, $pattern);
 	}
 
 	/**
