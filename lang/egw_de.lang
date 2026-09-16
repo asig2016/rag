@@ -3,6 +3,7 @@ all supported	rag	de	Alle unterstützten
 always use relevance	rag	de	Immer Relevanz verwenden
 anything enclosed in the double quotes is taken as a whole (so you can match phrases, for example).	rag	de	Alles, was in doppelten Anführungszeichen steht, wird als Ganzes betrachtet (so können Sie beispielsweise Phrasen abgleichen)
 api key	rag	de	API Key
+api of the rerank endpoint	rag	de	API des Rerank-Endpunkts
 app	rag	de	App
 app id	rag	de	App ID
 applications for rag / to calculate embeddings for	rag	de	Anwendungen für das RAG / um Embeddings zu berechnet
@@ -24,18 +25,25 @@ fulltext search	rag	de	Volltextsuche
 fulltext search only	rag	de	Volltextsuche ausschließlich
 general configuration	rag	de	Allgemeine Konfiguration
 higher is better	rag	de	größer ist besser
+how many matches to rerank	rag	de	Wie viele Treffer nachsortieren
 hybrid search (rag+fulltext)	rag	de	Hybride Suche (RAG+Volltext)
 hybrid search: rag+fulltext	rag	de	Hybride Suche: RAG + Volltext
 identical	rag	de	identisch
 in characters, incl. the context prefixed to every chunk. changing it re-embeds everything!	rag	de	In Zeichen, inkl. des jedem Chunk vorangestellten Kontexts. Eine Änderung berechnet alle Embeddings neu!
 last errors of rag's async job	rag	de	Letzte Fehler des asynchronen Jobs des RAG's
 leave empty to disable rag	rag	de	Leer lassen um das RAG auszuschalten
+leave empty to switch the reranking off. a cross-encoder judges query and text together and orders the matches better, but it adds a request per search.	rag	de	Leer lassen um das Nachsortieren auszuschalten. Ein Cross-Encoder bewertet Anfrage und Text gemeinsam und sortiert die Treffer besser, kostet aber eine Anfrage pro Suche.
+leave empty to use the url above	rag	de	Leer lassen um die URL von oben zu verwenden
 legacy search	rag	de	Legacy Suche
 legacy search, as used before	rag	de	Legacy-Suche, wie zuvor verwendet
+matches scored below are dropped, 0 keeps all of them	rag	de	Treffer mit geringerem Score werden verworfen, 0 behält alle
 max. distance of a semantic match	rag	de	Max. Abstand eines semantischen Treffers
 max. runtime	rag	de	Max. Ausführungszeit
 minimize chunks e.g. concatenate title and description	rag	de	Minimiere die Chunks z.B. durch aneinander hängen von Titel und Beschreibung
+minimum score of the reranker	rag	de	Mindest-Score des Rerankers
+model to rerank the best matches	rag	de	Model zum Nachsortieren der besten Treffer
 model to use	rag	de	Benutztes Model
+more candidates give a better order, but take longer: on a cpu about 1-3 seconds for 50.	rag	de	Mehr Kandidaten ergeben eine bessere Sortierung, dauern aber länger: auf einer CPU etwa 1-3 Sekunden für 50.
 no match	rag	de	kein Treffer
 no, use search-order chosen in app	rag	de	Nein, verwende die Sortierung die in der App gewählt wurde
 number of results for the search in the applications' lists	rag	de	Anzahl der Treffer für die Suche in den Listen der Anwendungen
@@ -48,6 +56,7 @@ rag / semantic search	rag	de	RAG / Semantische Suche
 rag search	rag	de	RAG Suche
 rag search only	rag	de	RAG Suche ausschließlich
 relevance	rag	de	Relevanz
+reranking the best matches (optional)	rag	de	Nachsortieren der besten Treffer (optional)
 search configuration	rag	de	Konfiguration der Suche
 search in which applications	rag	de	In welchen Anwendungen suchen
 stop calculating embeddings after this time (in seconds). default: 285 (4min:45sec)	rag	de	Beende die Berechnung von Embeddings nach dieser Zeit (in Sekunden). Vorgabe (4min:45sec)
@@ -59,9 +68,11 @@ the word following contributes negatively to the relevance of the row.	rag	de	Da
 the word is mandatory in all rows returned.	rag	de	Das Wort ist in allen zurückgegebenen Zeilen obligatorisch
 the word that follows has a higher relevance than other words.	rag	de	Das folgende Wort hat eine höhere Relevanz als andere Wörter
 the word that follows has a lower relevance than other words, although rows containing it will still match.	rag	de	Das folgende Wort hat eine geringere Relevanz als andere Wörter, obwohl Zeilen, die es enthalten, weiterhin übereinstimmen
+timeout of the rerank endpoint	rag	de	Timeout des Rerank-Endpunkts
 type of search	rag	de	Art der Suche
 unexpected	common	de	unerwartet
 url of openai compatible api	rag	de	URL der OpenAI kompatiblen API
+url of the rerank endpoint	rag	de	URL des Rerank-Endpunkts
 use operators:	rag	de	Operatoren verwenden:
 used to group words into subexpressions.	rag	de	Wird verwendet, um Wörter zu Unterausdrücken zu gruppieren
 weekday 0-6, 0=sun	rag	de	Wochentag 0-6, 0=Sonntag

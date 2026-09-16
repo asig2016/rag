@@ -3,6 +3,7 @@ all supported	rag	en	All supported
 always use relevance	rag	en	Always use relevance
 anything enclosed in the double quotes is taken as a whole (so you can match phrases, for example).	rag	en	Anything enclosed in the double quotes is taken as a whole (so you can match phrases, for example)
 api key	rag	en	API Key
+api of the rerank endpoint	rag	en	API of the rerank endpoint
 app	rag	en	App
 app id	rag	en	App ID
 applications for rag / to calculate embeddings for	rag	en	Applications for RAG / to calculate embeddings for
@@ -24,18 +25,25 @@ fulltext search	rag	en	Fulltext search
 fulltext search only	rag	en	Fulltext search only
 general configuration	rag	en	General configuration
 higher is better	rag	en	higher is better
+how many matches to rerank	rag	en	How many matches to rerank
 hybrid search (rag+fulltext)	rag	en	Hybrid search (RAG + Fulltext)
 hybrid search: rag+fulltext	rag	en	Hybrid search: RAG+Fulltext
 identical	rag	en	identical
 in characters, incl. the context prefixed to every chunk. changing it re-embeds everything!	rag	en	In characters, incl. the context prefixed to every chunk. Changing it re-embeds everything!
 last errors of rag's async job	rag	en	Last errors of RAG's async job
 leave empty to disable rag	rag	en	leave empty to disable RAG
+leave empty to switch the reranking off. a cross-encoder judges query and text together and orders the matches better, but it adds a request per search.	rag	en	Leave empty to switch the reranking off. A cross-encoder judges query and text together and orders the matches better, but it adds a request per search.
+leave empty to use the url above	rag	en	Leave empty to use the URL above
 legacy search	rag	en	Legacy search
 legacy search, as used before	rag	en	Legacy search, as used before
+matches scored below are dropped, 0 keeps all of them	rag	en	Matches scored below are dropped, 0 keeps all of them
 max. distance of a semantic match	rag	en	Max. distance of a semantic match
 max. runtime	rag	en	Max. Runtime
 minimize chunks e.g. concatenate title and description	rag	en	Minimize chunks e.g. concatenate title and description
+minimum score of the reranker	rag	en	Minimum score of the reranker
+model to rerank the best matches	rag	en	Model to rerank the best matches
 model to use	rag	en	Model to use
+more candidates give a better order, but take longer: on a cpu about 1-3 seconds for 50.	rag	en	More candidates give a better order, but take longer: on a CPU about 1-3 seconds for 50.
 no match	rag	en	no match
 no, use search-order chosen in app	rag	en	No, use search-order chosen in app
 number of results for the search in the applications' lists	rag	en	Number of results for the search in the applications' lists
@@ -48,6 +56,7 @@ rag / semantic search	rag	en	RAG / Semantic search
 rag search	rag	en	RAG Search
 rag search only	rag	en	RAG search only
 relevance	rag	en	Relevance
+reranking the best matches (optional)	rag	en	Reranking the best matches (optional)
 search configuration	rag	en	Search configuration
 search in which applications	rag	en	Search in which applications
 should search in apps be ordered by relevance	rag	en	Should search in apps be ordered by relevance
@@ -59,9 +68,11 @@ the word following contributes negatively to the relevance of the row.	rag	en	Th
 the word is mandatory in all rows returned.	rag	en	The word is mandatory in all rows returned
 the word that follows has a higher relevance than other words.	rag	en	The word that follows has a higher relevance than other words
 the word that follows has a lower relevance than other words, although rows containing it will still match.	rag	en	The word that follows has a lower relevance than other words, although rows containing it will still match
+timeout of the rerank endpoint	rag	en	Timeout of the rerank endpoint
 type of search	rag	en	Type of search
 unexpected	common	en	unexpected
 url of openai compatible api	rag	en	URL of OpenAI compatible API
+url of the rerank endpoint	rag	en	URL of the rerank endpoint
 use operators:	rag	en	Use operators:
 used to group words into subexpressions.	rag	en	Used to group words into subexpressions
 weekday 0-6, 0=sun	rag	en	Weekday 0-6, 0=Sun
