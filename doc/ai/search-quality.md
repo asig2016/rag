@@ -1,6 +1,6 @@
 # RAG: search quality
 
-## Status: phases 1-4 implemented (2026-09-15/16), not yet run against a real embedding endpoint
+## Status: all phases implemented (2026-09-15/16), none of it run against a real endpoint yet
 
 | Phase | Topic | Status |
 |---|---|---|
@@ -8,7 +8,7 @@
 | 2 | Hybrid ranking with Reciprocal Rank Fusion | implemented, see "Phase 2 notes" |
 | 3 | Chunking + chunk context (forces a re-index) | implemented, see "Phase 3 notes" |
 | 4 | Fulltext tightening for multi-word queries | implemented, see "Phase 4 notes" |
-| 5 | Cross-encoder reranker (optional per install) | open |
+| 5 | Cross-encoder reranker (optional per install) | implemented, see "Phase 5 notes" |
 
 Goal: better results from the hybrid (embeddings + InnoDB fulltext) search used by
 `Api\Storage::process_search()` → `Embedding::search2criteria()` and by plugins calling
@@ -264,6 +264,39 @@ and needs the evaluation set to prove it helps (it adds a second endpoint and la
   relevance or `rerank_min_score > 0` - a list sorted by date throws the new order away.
 - Latency: roughly 1-3 s for 50 candidates of ~500 tokens on CPU, far less on a GPU; say so on the
   config page.
+
+### Phase 5 notes (2026-09-16)
+
+- Off unless `rerank_model` is configured. Config: `rerank_model`, `rerank_url` (defaults to `url`),
+  `rerank_api` (`cohere` for llama.cpp/vLLM/Jina, `tei` for HuggingFace TEI), `rerank_depth` (50),
+  `rerank_min_score` (0 = keep all), `rerank_timeout` (3 s). en/de translations added.
+- `Embedding::rerank($query, $documents)` posts to `<url>/rerank` with the api-key as bearer token and
+  returns `id => score`, best first. It maps the response by its `index`, so the endpoint may answer in
+  any order, and throws if there are no scores in it.
+- `rerankResults()` runs inside `search()` after the fusion and before the user's order, and only when
+  the result is used in relevance order (`default`/`relevance`) or `rerank_min_score` is set - a list
+  sorted by date would throw the new order away.
+  - Only the first `rerank_depth` entries are candidates; the rest keeps its fused rank behind them.
+  - A candidate the endpoint returned no score for keeps its fused rank behind the scored ones.
+  - `rerank_min_score` drops candidates and `total` is reduced accordingly; entries beyond
+    `rerank_depth` are never dropped, they were not judged.
+  - Any failure is logged through `logError()` and the fused order is kept: a search never fails
+    because of the reranker.
+- Documents: `$return_all` rows already carry title/description; for the app-list path
+  (`$return_all=false`, e.g. `search2criteria()`) the texts of all candidates are fetched with one
+  query from `egw_rag_fulltext` (part `''`), truncated to `RERANK_MAX_CHARS` (2000).
+  - Deviation from the plan: the plan wanted the *best matching chunk* rebuilt with `chunkSplit()`.
+    That needs the chunk index through the whole query and is worth doing only if measurement shows
+    the truncated head of the entry is not enough.
+- HTTP through `symfony/http-client` (already in `vendor/` via openai-php, which has no rerank call);
+  `httpClient()` takes an injected client for tests.
+- Tested with a stubbed HTTP client (15 checks): both response shapes, response in shuffled order, url
+  /model/timeout/api-key of the request, a garbage answer throwing, reranked order, `rerank_min_score`
+  dropping candidates and adjusting `total`, endpoint failure keeping the fused order, depth limiting
+  the candidates, no request when sorted by date or without a configured model, and the app-list path
+  fetching its texts from the index.
+- **Not measured yet:** whether it improves recall@10/MRR on real data, and the real latency. Needs a
+  rerank endpoint, e.g. llama.cpp `--reranking` with a bge-reranker-v2-m3 GGUF.
 
 ## Verification
 

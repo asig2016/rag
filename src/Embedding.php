@@ -14,6 +14,7 @@ namespace EGroupware\Rag;
 use EGroupware\Api;
 use EGroupware\Api\Db\Exception\InvalidSql;
 use OpenAI;
+use Symfony\Component\HttpClient\HttpClient;
 
 require_once __DIR__.'/../vendor/autoload.php';
 
@@ -107,6 +108,34 @@ class Embedding
 	 * Constant k of Reciprocal Rank Fusion: bigger values weigh the top ranks of each list less
 	 */
 	const RRF_K = 60;
+	/**
+	 * @var ?string cross-encoder model to rerank the best matches with, null/empty: no reranking
+	 */
+	protected static ?string $rerank_model = null;
+	/**
+	 * @var ?string base-url of the rerank endpoint, defaults to self::$url
+	 */
+	protected static ?string $rerank_url = null;
+	/**
+	 * @var string api of the rerank endpoint: "cohere" (llama.cpp, vLLM, Jina) or "tei" (HuggingFace TEI)
+	 */
+	protected static string $rerank_api = 'cohere';
+	/**
+	 * @var int how many of the best matches are reranked
+	 */
+	protected static int $rerank_depth = 50;
+	/**
+	 * @var float drop candidates the reranker scores below this, 0: keep all
+	 */
+	protected static float $rerank_min_score = 0.0;
+	/**
+	 * @var float seconds to wait for the rerank endpoint
+	 */
+	protected static float $rerank_timeout = 3.0;
+	/**
+	 * @var int max. characters of a document sent to the reranker
+	 */
+	const RERANK_MAX_CHARS = 2000;
 
 	/**
 	 * @var int log-level: 0: errors only, 1: result of search*() methods
@@ -222,6 +251,13 @@ class Embedding
 		self::$minimize_chunks = ($config['minimize_chunks'] ?? 'yes') !== 'no';
 		self::$max_distance = is_numeric($config['max_distance'] ?? null) && $config['max_distance'] > 0 ? (float)$config['max_distance'] : .4;
 		self::$search_depth = (int)($config['search_depth'] ?? 200) ?: 200;
+
+		self::$rerank_model = !empty($config['rerank_model']) ? $config['rerank_model'] : null;
+		self::$rerank_url = !empty($config['rerank_url']) ? $config['rerank_url'] : null;
+		self::$rerank_api = ($config['rerank_api'] ?? 'cohere') === 'tei' ? 'tei' : 'cohere';
+		self::$rerank_depth = (int)($config['rerank_depth'] ?? 50) ?: 50;
+		self::$rerank_min_score = (float)($config['rerank_min_score'] ?? 0);
+		self::$rerank_timeout = (float)($config['rerank_timeout'] ?? 3) ?: 3.0;
 		// the cast has to happen after ??, (int)null is 0 and would stop embed() after the first entry
 		self::$max_runtime = (int)($config['async_maxruntime'] ?? 285) ?: 285;
 
@@ -961,6 +997,12 @@ class Embedding
 			}
 		}
 
+		// a cross-encoder judges the query against the text of the best matches, which a bi-encoder
+		// (the embeddings) can only approximate - but only if the result is used in that order
+		if (self::$rerank_model && ($order === 'default' || str_starts_with($order, 'relevance') || self::$rerank_min_score > 0))
+		{
+			$both = $this->rerankResults($pattern, $both, $return_all);
+		}
 		[$order, $sort] = explode(' ', self::validateOrder($order), 2);
 		if ($order !== 'default')
 		{
@@ -989,6 +1031,221 @@ class Embedding
 				json_encode($both));
 		}
 		return $both;
+	}
+
+	/**
+	 * Rerank the best matches of a search with a cross-encoder
+	 *
+	 * The embeddings encode entry and query independently, a cross-encoder scores them together and is
+	 * therefore a lot better at telling a real answer from a topically similar text - but it has to run
+	 * over the candidates, so only the first self::$rerank_depth of them are reranked.
+	 *
+	 * Failures are logged and the given order is kept: a search must not fail because of the reranker.
+	 *
+	 * @param string $pattern the search-pattern
+	 * @param array $rows id => score or id => row, best first
+	 * @param bool $return_all are the values rows (with title/description) or just scores
+	 * @return array same shape, reranked
+	 */
+	protected function rerankResults(string $pattern, array $rows, bool $return_all) : array
+	{
+		$candidates = array_slice($rows, 0, self::$rerank_depth, true);
+		$rest = array_slice($rows, count($candidates), null, true);
+		if (count($candidates) < 2)
+		{
+			return $rows;   // nothing to reorder
+		}
+		try {
+			$documents = $this->documents(array_keys($candidates), $return_all ? $candidates : []);
+			if (!$documents)
+			{
+				return $rows;
+			}
+			$scores = $this->rerank($pattern, $documents);
+		}
+		catch (\Throwable $e) {
+			self::logError($e, 'rag', false, ['pattern' => $pattern, 'candidates' => count($candidates)]);
+			return $rows;
+		}
+		$reranked = [];
+		foreach($scores as $id => $score)
+		{
+			if (!isset($candidates[$id]) || self::$rerank_min_score && $score < self::$rerank_min_score)
+			{
+				continue;
+			}
+			$reranked[$id] = $return_all ? $candidates[$id] + ['rerank_score' => $score] : $candidates[$id];
+		}
+		// candidates without a score, e.g. no text to send, keep their fused rank behind the reranked ones
+		foreach($candidates as $id => $row)
+		{
+			if (!isset($reranked[$id]) && !(self::$rerank_min_score && isset($scores[$id])))
+			{
+				$reranked[$id] = $row;
+			}
+		}
+		// the entries the reranker dropped are gone from the result
+		$this->total -= count($candidates) - count($reranked);
+
+		if (self::$log_level)
+		{
+			error_log(__METHOD__."('$pattern', ".count($rows)." rows) reranked ".count($candidates).
+				' candidates, dropped '.(count($candidates) - count($reranked)));
+		}
+		return $reranked + $rest;
+	}
+
+	/**
+	 * Texts to send to the reranker for the given entries
+	 *
+	 * @param array $ids int id (for a single app) or "app:id"
+	 * @param array $rows optional rows with title/description, as returned with $return_all
+	 * @return array id => text, entries without any text are not returned
+	 * @throws Api\Db\Exception
+	 */
+	protected function documents(array $ids, array $rows=[]) : array
+	{
+		$documents = $missing = [];
+		foreach($ids as $id)
+		{
+			if (isset($rows[$id]['title']) || isset($rows[$id]['description']))
+			{
+				$documents[$id] = self::document($rows[$id]['title'] ?? '', $rows[$id]['description'] ?? '',
+					$rows[$id]['extra'] ?? []);
+			}
+			else
+			{
+				$missing[] = $id;
+			}
+		}
+		if ($missing)
+		{
+			// one query for the texts of all entries missing them, no matter which app they are from
+			$where = [];
+			foreach($missing as $id)
+			{
+				[$app, $app_id] = strpos((string)$id, ':') !== false ? explode(':', $id, 2) : [null, $id];
+				$where[] = '('.(isset($app) ? self::FULLTEXT_APP.'='.$this->db->quote($app).' AND ' : '').
+					self::FULLTEXT_APP_ID.'='.(int)$app_id.')';
+			}
+			foreach($this->db->select(self::FULLTEXT_TABLE, [self::FULLTEXT_APP, self::FULLTEXT_APP_ID,
+				self::FULLTEXT_TITLE, self::FULLTEXT_DESCRIPTION, self::FULLTEXT_EXTRA], [
+					implode(' OR ', $where),
+					self::FULLTEXT_PART => '',
+				], __LINE__, __FILE__, false, '', self::APP) as $row)
+			{
+				foreach([(int)$row[self::FULLTEXT_APP_ID], $row[self::FULLTEXT_APP].':'.$row[self::FULLTEXT_APP_ID]] as $id)
+				{
+					if (in_array($id, $missing))
+					{
+						$documents[$id] = self::document($row[self::FULLTEXT_TITLE], $row[self::FULLTEXT_DESCRIPTION],
+							!empty($row[self::FULLTEXT_EXTRA]) ? (array)json_decode($row[self::FULLTEXT_EXTRA], true) : []);
+					}
+				}
+			}
+		}
+		return array_filter($documents, static fn($text) => trim($text) !== '');
+	}
+
+	/**
+	 * One document for the reranker: title first, then as much of the text as we send
+	 *
+	 * @param ?string $title
+	 * @param ?string $description
+	 * @param array $extra
+	 * @return string
+	 */
+	protected static function document(?string $title, ?string $description, array $extra=[]) : string
+	{
+		$text = implode("\n", array_filter(array_merge([$title, $description], array_map('strval', $extra)),
+			static fn($t) => isset($t) && trim((string)$t) !== ''));
+
+		return mb_substr(trim($text), 0, self::RERANK_MAX_CHARS);
+	}
+
+	/**
+	 * Score documents against a query with the configured cross-encoder
+	 *
+	 * @param string $query
+	 * @param array $documents id => text
+	 * @return float[] id => score, best (highest) first
+	 * @throws \Exception if the endpoint is not reachable or answers something unexpected
+	 */
+	public function rerank(string $query, array $documents) : array
+	{
+		if (!self::$rerank_model || !$documents)
+		{
+			return [];
+		}
+		$url = rtrim(self::$rerank_url ?? self::$url ?? '', '/');
+		if (!$url)
+		{
+			throw new \Exception('No URL configured for the rerank endpoint');
+		}
+		if (!str_ends_with($url, '/rerank'))
+		{
+			$url .= '/rerank';
+		}
+		$ids = array_keys($documents);
+		$texts = array_values($documents);
+		$payload = self::$rerank_api === 'tei' ? [
+			'query' => $query,
+			'texts' => $texts,
+		] : [
+			'model' => self::$rerank_model,
+			'query' => $query,
+			'documents' => $texts,
+			'top_n' => count($texts),
+		];
+		$response = $this->httpClient()->request('POST', $url, [
+			'headers' => array_filter([
+				'Content-Type' => 'application/json',
+				'Authorization' => self::$api_key ? 'Bearer '.self::$api_key : null,
+			]),
+			'json' => $payload,
+			'timeout' => self::$rerank_timeout,
+		])->toArray();
+
+		// cohere/llama.cpp/vLLM: {results: [{index, relevance_score}]}, TEI: [{index, score}]
+		$results = $response['results'] ?? $response['data'] ?? $response;
+		$scores = [];
+		foreach((array)$results as $result)
+		{
+			if (!isset($result['index']) || !isset($ids[$result['index']]))
+			{
+				continue;
+			}
+			$score = $result['relevance_score'] ?? $result['score'] ?? null;
+			if (isset($score))
+			{
+				$scores[$ids[$result['index']]] = (float)$score;
+			}
+		}
+		if (!$scores)
+		{
+			throw new \Exception('Rerank endpoint '.$url.' returned no scores: '.
+				substr(json_encode($response, JSON_INVALID_UTF8_IGNORE), 0, 200));
+		}
+		arsort($scores);
+		return $scores;
+	}
+
+	/**
+	 * @var ?object PSR-18 / Symfony HttpClient, only used for the rerank endpoint (openai-php has no rerank)
+	 */
+	protected ?object $http_client = null;
+
+	/**
+	 * @param ?object $client to inject one, e.g. for tests
+	 * @return object
+	 */
+	public function httpClient(?object $client=null) : object
+	{
+		if (isset($client))
+		{
+			$this->http_client = $client;
+		}
+		return $this->http_client ??= HttpClient::create(['timeout' => self::$rerank_timeout]);
 	}
 
 	/**

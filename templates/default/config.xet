@@ -89,6 +89,48 @@
 					<et2-number id="newsettings[search_depth]" min="50" max="5000" precision="0" placeholder="200"></et2-number>
 				</row>
 				<row>
+					<et2-description  value="Reranking the best matches (optional)" span="all" class="subHeader"></et2-description>
+				</row>
+				<row>
+					<et2-description  value="Model to rerank the best matches"></et2-description>
+					<et2-hbox>
+						<et2-textbox id="newsettings[rerank_model]" placeholder="bge-reranker-v2-m3"></et2-textbox>
+						<et2-description label="Leave empty to switch the reranking off. A cross-encoder judges query and text together and orders the matches better, but it adds a request per search."></et2-description>
+					</et2-hbox>
+				</row>
+				<row>
+					<et2-description  value="URL of the rerank endpoint"></et2-description>
+					<et2-hbox>
+						<et2-textbox id="newsettings[rerank_url]"></et2-textbox>
+						<et2-description label="Leave empty to use the URL above"></et2-description>
+					</et2-hbox>
+				</row>
+				<row>
+					<et2-description  value="API of the rerank endpoint"></et2-description>
+					<et2-select id="newsettings[rerank_api]">
+						<option value="">llama.cpp / vLLM / Jina (/v1/rerank)</option>
+						<option value="tei">HuggingFace TEI (/rerank)</option>
+					</et2-select>
+				</row>
+				<row>
+					<et2-description  value="How many matches to rerank"></et2-description>
+					<et2-hbox>
+						<et2-number id="newsettings[rerank_depth]" min="2" max="500" precision="0" placeholder="50"></et2-number>
+						<et2-description label="More candidates give a better order, but take longer: on a CPU about 1-3 seconds for 50."></et2-description>
+					</et2-hbox>
+				</row>
+				<row>
+					<et2-description  value="Minimum score of the reranker"></et2-description>
+					<et2-hbox>
+						<et2-number id="newsettings[rerank_min_score]" min="0" max="1" precision="2" placeholder="0"></et2-number>
+						<et2-description label="Matches scored below are dropped, 0 keeps all of them"></et2-description>
+					</et2-hbox>
+				</row>
+				<row>
+					<et2-description  value="Timeout of the rerank endpoint"></et2-description>
+					<et2-number id="newsettings[rerank_timeout]" min="1" max="30" precision="0" placeholder="3"></et2-number>
+				</row>
+				<row>
 					<et2-description  value="Async Job Settings (Cron Schedule): Leave empty to use defaults."/>
 					<et2-hbox>
 						<et2-textbox  width="14%" id="newsettings[async_year]" label="Year"/>
