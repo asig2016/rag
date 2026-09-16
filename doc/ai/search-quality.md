@@ -197,6 +197,9 @@ attached or linked files.
   texts joined from part `''`), because an entry now has several fulltext rows.
 - Fixed on the way: `Base::getUpdated()` used `$entries ?` instead of `isset($entries)`, which warned
   on every row of the async job.
+- An entry whose columns hold no text at all is embedded with its chunk header alone: without it such
+  an entry gets no embedding row and is queried again on every run of the async job (in one app 38530
+  of 131340 entries have an empty description).
 - Update 26.1.003 empties `egw_rag` and drops the tracker fulltext rows (replies moved out of
   `ft_extra`), then installs the async job. Tracker's fulltext search is degraded until it has run.
 - Tested with stubs: a ticket with two replies produces the expected fulltext and embedding rows per

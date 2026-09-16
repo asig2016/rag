@@ -700,6 +700,12 @@ class Embedding
 									}
 								}
 							}
+							// an entry without any text still has its context, e.g. the subject: index that alone,
+							// otherwise it gets no embedding at all and is queried again on every run of the job
+							if (!$fulltext && empty($chunks['']) && trim($parts['']['header']) !== '')
+							{
+								$chunks[''] = [rtrim($parts['']['header'])];
+							}
 							if (!$fulltext)
 							{
 								// one request for all chunks of all parts of the entry
