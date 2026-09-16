@@ -1,3 +1,4 @@
+0 = identical, 2 = opposite meaning, default 0.4	rag	en	0 = identical, 2 = opposite meaning, default 0.4
 all supported	rag	en	All supported
 always use relevance	rag	en	Always use relevance
 anything enclosed in the double quotes is taken as a whole (so you can match phrases, for example).	rag	en	Anything enclosed in the double quotes is taken as a whole (so you can match phrases, for example)
@@ -30,11 +31,13 @@ last errors of rag's async job	rag	en	Last errors of RAG's async job
 leave empty to disable rag	rag	en	leave empty to disable RAG
 legacy search	rag	en	Legacy search
 legacy search, as used before	rag	en	Legacy search, as used before
+max. distance of a semantic match	rag	en	Max. distance of a semantic match
 max. runtime	rag	en	Max. Runtime
 minimize chunks e.g. concatenate title and description	rag	en	Minimize chunks e.g. concatenate title and description
 model to use	rag	en	Model to use
 no match	rag	en	no match
 no, use search-order chosen in app	rag	en	No, use search-order chosen in app
+number of results for the search in the applications' lists	rag	en	Number of results for the search in the applications' lists
 operators	rag	en	Operators
 opposite	rag	en	opposite
 please note: ollama must be bound to all interfaces, not just localhost!	rag	en	Please note: Ollama must be bound to all interfaces, NOT just localhost!
@@ -44,6 +47,7 @@ rag / semantic search	rag	en	RAG / Semantic search
 rag search	rag	en	RAG Search
 rag search only	rag	en	RAG search only
 relevance	rag	en	Relevance
+search configuration	rag	en	Search configuration
 search in which applications	rag	en	Search in which applications
 should search in apps be ordered by relevance	rag	en	Should search in apps be ordered by relevance
 stop calculating embeddings after this time (in seconds). default: 285 (4min:45sec)	rag	en	Stop calculating embeddings after this time (in seconds). Default: 285 (4min:45sec)
