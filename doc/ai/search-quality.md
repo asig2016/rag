@@ -1,6 +1,8 @@
 # RAG: search quality
 
-## Status: all phases implemented (2026-09-15/16), none of it run against a real endpoint yet
+## Status: all phases implemented (2026-09-15/16) and verified against real endpoints
+## (2026-09-17/18, see `diagnostics.md`) - embeddings, hybrid search and reranking all working;
+## ranking quality (recall@10/MRR) still unmeasured
 
 | Phase | Topic | Status |
 |---|---|---|
@@ -297,6 +299,20 @@ and needs the evaluation set to prove it helps (it adds a second endpoint and la
   fetching its texts from the index.
 - **Not measured yet:** whether it improves recall@10/MRR on real data, and the real latency. Needs a
   rerank endpoint, e.g. llama.cpp `--reranking` with a bge-reranker-v2-m3 GGUF.
+- **2026-09-17, first run against a real endpoint: Ollama has no rerank endpoint.** Configuring
+  `rerank_model` with an Ollama url makes every hybrid search post to `<url>/v1/rerank` and get a
+  `404 page not found` (so do `/rerank`, `/api/rerank`, `/v1/reranking`); pulling
+  `qllama/bge-reranker-v2-m3` does not change that. The fallback works as designed - the fused order
+  is kept and the search never fails - but the doomed request and its `rag-last-errors` entry happen
+  on every search. Reranking needs llama.cpp `--reranking`, vLLM, Jina or HuggingFace TEI.
+  `Hooks::configValidate()` now probes the reranker when the config is saved, and the new
+  diagnostics page (`doc/ai/diagnostics.md`) checks it on demand.
+- **2026-09-18: phase 5 is verified end-to-end.** A separate llama.cpp `--reranking` server
+  (`rerank_url` = `http://10.255.255.104:8012/v1`, embeddings stay on Ollama) reranks 50 real
+  2000-char documents in ~0.5s and demonstrably re-sorts a hybrid search - the fused top hit leaves
+  the top 4 and relevance stops predicting the order. It first needed llama.cpp's physical batch
+  raised (`-ub 2048 -b 2048 -c 8192`); with the default 512 every search 500'd on the first
+  over-long document. Recall@10/MRR are still unmeasured.
 
 ## Verification
 

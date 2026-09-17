@@ -42,6 +42,7 @@ class Hooks
 		{
 			$file = Array(
 				'Site Configuration' => Api\Egw::link('/index.php','menuaction=admin.admin_config.index&appname=' . $appname.'&ajax=true'),
+				'Diagnostics' => Api\Egw::link('/index.php', 'menuaction=rag.EGroupware\\Rag\\Diagnostics.index&ajax=true'),
 			);
 			if ($location == 'admin')
 			{
@@ -112,6 +113,7 @@ class Hooks
 				Embedding::installAsyncJob();
 			}
 			catch (\Exception $e) {
+				$error = $e->getMessage();
 				switch($e->getCode())
 				{
 					case 1002:
@@ -122,7 +124,33 @@ class Hooks
 						Api\Etemplate::set_validation_error('embedding_model', $error, 'newsettings');
 						break;
 					default:
-						Api\Json\Response::get()->message($e->getMessage(), empty($data['url']) ? 'info' : 'error');
+						Api\Json\Response::get()->message($error, empty($data['url']) ? 'info' : 'error');
+				}
+			}
+			// testConfig() only checks the embedding model: the reranker is a second endpoint and can be dead
+			// without anything ever saying so, a search just silently keeps the order of the hybrid fusion
+			if (!empty($data['rerank_model']))
+			{
+				$embed = new Embedding(0, array_filter($data));
+				$rerank_url = !empty($data['rerank_url']) ? $data['rerank_url'] : $data['url'];
+				try {
+					// one document of the length a real search sends: an endpoint can score short test
+					// documents perfectly and still refuse a real one, e.g. llama.cpp's physical batch size
+					$embed->rerank(Diagnostics::RERANK_QUERY, array_merge(Diagnostics::RERANK_DOCUMENTS,
+						[Diagnostics::rerankProbeDocument()]));
+				}
+				catch (\Throwable $e) {
+					$error = $e->getMessage();
+					try {
+						// the short documents alone tell us whether it is the endpoint or our document length
+						$embed->rerank(Diagnostics::RERANK_QUERY, Diagnostics::RERANK_DOCUMENTS);
+						Api\Json\Response::get()->message(lang('Rerank endpoint %1 refuses a document of %2 characters, as every search sends: %3',
+							$rerank_url, Embedding::RERANK_MAX_CHARS, $error), 'error');
+					}
+					catch (\Throwable $e2) {
+						Api\Json\Response::get()->message(lang('Rerank endpoint %1 is not usable: %2',
+							$rerank_url, $e2->getMessage()), 'error');
+					}
 				}
 			}
 		}
