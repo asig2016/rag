@@ -1,0 +1,19 @@
+/**
+ * EGroupware RAG system - app styles
+ *
+ * @package rag
+ * @link https://www.egroupware.org
+ * @license https://opensource.org/licenses/gpl-license.php GPL - GNU General Public License
+ */
+
+/* the diagnostics report is column-aligned plain text, it needs a monospace font and its own line breaks */
+.rag_diagnostics_output {
+	font-family: monospace;
+	white-space: pre;
+	overflow: auto;
+}
+.rag_diagnostics_output::part(base),
+.rag_diagnostics_output::part(textarea) {
+	font-family: monospace;
+	white-space: pre;
+}

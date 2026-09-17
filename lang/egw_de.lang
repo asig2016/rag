@@ -1,4 +1,8 @@
+%1 characters accepted	rag	de	%1 Zeichen akzeptiert
+%1 of %2 embeddings returned	rag	de	%1 von %2 Embeddings zurückgegeben
 0 = identical, 2 = opposite meaning, default 0.4	rag	de	0 = identisch, 2 = gegenteilige Bedeutung, Vorgabe 0,4
+a real search sends documents of %1 characters	rag	de	eine echte Suche sendet Dokumente mit %1 Zeichen
+a reranker needs a cross-encoder endpoint: llama.cpp --reranking, vllm, jina or huggingface tei.	rag	de	Ein Reranker braucht einen Cross-Encoder-Endpunkt: llama.cpp --reranking, vLLM, Jina oder HuggingFace TEI.
 all supported	rag	de	Alle unterstützten
 always use relevance	rag	de	Immer Relevanz verwenden
 anything enclosed in the double quotes is taken as a whole (so you can match phrases, for example).	rag	de	Alles, was in doppelten Anführungszeichen steht, wird als Ganzes betrachtet (so können Sie beispielsweise Phrasen abgleichen)
@@ -6,21 +10,39 @@ api key	rag	de	API Key
 api of the rerank endpoint	rag	de	API des Rerank-Endpunkts
 app	rag	de	App
 app id	rag	de	App ID
+application	rag	de	Anwendung
 applications for rag / to calculate embeddings for	rag	de	Anwendungen für das RAG / um Embeddings zu berechnet
 applications to add to fulltext-index	rag	de	Anwendungen für den Volltext Index
+async job	rag	de	Asynchroner Job
 async job settings (cron schedule): leave empty to use defaults.	rag	de	Einstellungen für den Asynchronen Dienst (Cron Ausführung): Leer lassen um die Vorgaben zu benutzen.
+both indexes	rag	de	Beide Indizes
+cached search patterns	rag	de	Zwischengespeicherte Suchmuster
 change fulltext search pattern to match words starting with pattern	rag	de	Ändere das Suchmuster der Volltextsuche um auch Worte zu finden die damit beginnen
+checks	rag	de	Prüfungen
 chunk overlap	rag	de	Chunk Überlappung
 chunk size	rag	de	Größe der Chunks
+chunks	rag	de	Chunks
 currently only embedding models with 1024 dimensions, like bge-m3 are supported!	rag	de	Derzeit werden nur Einbettungsmodelle mit 1024 Dimensionen wie bge-m3 unterstützt!
+database	rag	de	Datenbank
 default sorting	rag	de	Normale Sortierung
 default: */5 (=every 5 minutes)	rag	de	Vorgabe: */5 (=alle 5 Minuten)
+diagnostics	rag	de	Diagnose
+dimensions	rag	de	Dimensionen
 distance	rag	de	Distanz
 distance/relevance	rag	de	Distanz/Relevanz
+document length	rag	de	Dokumentlänge
 dow	rag	de	Wochentag
+embedding	rag	de	Embedding
 embedding configuration	rag	de	Embedding Konfiguration
+embeddings only	rag	de	Nur Embeddings
+endpoint and models	rag	de	Endpunkt und Modelle
 enter your search query here...	rag	de	Geben Sie Ihre Suchanfrage hier ein...
+entries	rag	de	Einträge
+even the best match scores below it - every match would be dropped	rag	de	selbst der beste Treffer liegt darunter - jeder Treffer würde verworfen
+even the related texts are further apart than that - matches will be dropped	rag	de	selbst die verwandten Texte liegen weiter auseinander - Treffer werden verworfen
+every search still works, it silently keeps the order of the hybrid fusion and logs this error.	rag	de	Jede Suche funktioniert weiterhin, sie behält stillschweigend die Reihenfolge der hybriden Fusion bei und protokolliert diesen Fehler.
 fulltext	rag	de	Volltext
+fulltext index only	rag	de	Nur Volltext-Index
 fulltext search	rag	de	Volltextsuche
 fulltext search only	rag	de	Volltextsuche ausschließlich
 general configuration	rag	de	Allgemeine Konfiguration
@@ -30,38 +52,80 @@ hybrid search (rag+fulltext)	rag	de	Hybride Suche (RAG+Volltext)
 hybrid search: rag+fulltext	rag	de	Hybride Suche: RAG + Volltext
 identical	rag	de	identisch
 in characters, incl. the context prefixed to every chunk. changing it re-embeds everything!	rag	de	In Zeichen, inkl. des jedem Chunk vorangestellten Kontexts. Eine Änderung berechnet alle Embeddings neu!
+index now	rag	de	Jetzt indizieren
+index status	rag	de	Index-Status
+indexes for up to 30 seconds, so an installation can be tested without waiting for the async job.	rag	de	Indiziert bis zu 30 Sekunden, damit eine Installation getestet werden kann, ohne auf den asynchronen Job zu warten.
+installed	rag	de	installiert
 last errors of rag's async job	rag	de	Letzte Fehler des asynchronen Jobs des RAG's
 leave empty to disable rag	rag	de	Leer lassen um das RAG auszuschalten
 leave empty to switch the reranking off. a cross-encoder judges query and text together and orders the matches better, but it adds a request per search.	rag	de	Leer lassen um das Nachsortieren auszuschalten. Ein Cross-Encoder bewertet Anfrage und Text gemeinsam und sortiert die Treffer besser, kostet aber eine Anfrage pro Suche.
 leave empty to use the url above	rag	de	Leer lassen um die URL von oben zu verwenden
 legacy search	rag	de	Legacy Suche
 legacy search, as used before	rag	de	Legacy-Suche, wie zuvor verwendet
+llama.cpp refuses any single input longer than its physical batch, and one such document fails the whole request.	rag	de	llama.cpp lehnt jede einzelne Eingabe ab, die länger als sein physischer Batch ist, und ein solches Dokument lässt die ganze Anfrage scheitern.
+mariadb 11.7+ is required for the vector type	rag	de	MariaDB 11.7+ wird für den Vektor-Typ benötigt
 matches scored below are dropped, 0 keeps all of them	rag	de	Treffer mit geringerem Score werden verworfen, 0 behält alle
+max. distance	rag	de	Max. Abstand
 max. distance of a semantic match	rag	de	Max. Abstand eines semantischen Treffers
 max. runtime	rag	de	Max. Ausführungszeit
 minimize chunks e.g. concatenate title and description	rag	de	Minimiere die Chunks z.B. durch aneinander hängen von Titel und Beschreibung
 minimum score of the reranker	rag	de	Mindest-Score des Rerankers
 model to rerank the best matches	rag	de	Model zum Nachsortieren der besten Treffer
 model to use	rag	de	Benutztes Model
+models	rag	de	Modelle
+models of the endpoint	rag	de	Modelle des Endpunkts
 more candidates give a better order, but take longer: on a cpu about 1-3 seconds for 50.	rag	de	Mehr Kandidaten ergeben eine bessere Sortierung, dauern aber länger: auf einer CPU etwa 1-3 Sekunden für 50.
+nearest chunks	rag	de	Nächste Chunks
+next run	rag	de	nächster Lauf
 no match	rag	de	kein Treffer
+no row carries a rerank score	rag	de	keine Zeile trägt einen Rerank-Score
 no, use search-order chosen in app	rag	de	Nein, verwende die Sortierung die in der App gewählt wurde
+none - nothing is embedded for this application yet	rag	de	keine - für diese Anwendung ist noch nichts eingebettet
+not configured	rag	de	nicht konfiguriert
+not cosine - the k-nn query can not use the index	rag	de	nicht cosine - die k-NN-Abfrage kann den Index nicht nutzen
+not installed	rag	de	nicht installiert
+not offered by the endpoint	rag	de	wird vom Endpunkt nicht angeboten
+not offered by the endpoint - a rerank endpoint does not have to list it though	rag	de	wird vom Endpunkt nicht angeboten - ein Rerank-Endpunkt muss es allerdings nicht auflisten
+not reachable	rag	de	nicht erreichbar
 number of results for the search in the applications' lists	rag	de	Anzahl der Treffer für die Suche in den Listen der Anwendungen
+ollama has no rerank endpoint, having the model pulled is not enough.	rag	de	Ollama hat keinen Rerank-Endpunkt, das Modell heruntergeladen zu haben reicht nicht.
 operators	rag	de	Operatoren
 opposite	rag	de	Gegenteil
+order	rag	de	Reihenfolge
 please note: ollama must be bound to all interfaces, not just localhost!	rag	de	Bitte beachten: Ollama muss auf allen Schnittstellen gebunden sein, NICHT nur auf localhost!
 query	rag	de	Suchanfrage
 rag	common	de	RAG
 rag / semantic search	rag	de	RAG / Semantische Suche
 rag search	rag	de	RAG Suche
 rag search only	rag	de	RAG Suche ausschließlich
+ran %1 seconds	rag	de	lief %1 Sekunden
 relevance	rag	de	Relevanz
+rerank endpoint %1 is not usable: %2	rag	de	Rerank-Endpunkt %1 ist nicht nutzbar: %2
+rerank endpoint %1 refuses a document of %2 characters, as every search sends: %3	rag	de	Rerank-Endpunkt %1 lehnt ein Dokument mit %2 Zeichen ab, wie es jede Suche sendet: %3
+reranking	rag	de	Reranking
 reranking the best matches (optional)	rag	de	Nachsortieren der besten Treffer (optional)
+result	rag	de	Ergebnis
+run all checks	rag	de	Alle Prüfungen ausführen
+run it again to index the next batch, or save the configuration to let the async job do it.	rag	de	Erneut ausführen für den nächsten Stapel, oder die Konfiguration speichern, damit der asynchrone Job das übernimmt.
+run search	rag	de	Suche ausführen
+run the rerank check to see why	rag	de	Die Rerank-Prüfung ausführen, um zu sehen warum
+save the configuration to install it - without it no index is ever updated	rag	de	Die Konfiguration speichern, um ihn zu installieren - ohne ihn wird kein Index je aktualisiert
+score	rag	de	Score
+scores	rag	de	Scores
 search configuration	rag	de	Konfiguration der Suche
 search in which applications	rag	de	In welchen Anwendungen suchen
+semantics	rag	de	Semantik
+shown	rag	de	angezeigt
+start it with e.g. -ub 2048 -b 2048 -c 8192.	rag	de	Starten Sie es z.B. mit -ub 2048 -b 2048 -c 8192.
 stop calculating embeddings after this time (in seconds). default: 285 (4min:45sec)	rag	de	Beende die Berechnung von Embeddings nach dieser Zeit (in Sekunden). Vorgabe (4min:45sec)
 should search in apps be ordered by relevance	rag	de	Soll die Suche in den Anwendungen nach Relevanz sortiert sein
 syntax error in fulltext search-pattern	common	de	Syntaxfehler in Volltext Suchmuster
+the answering document is first - the reranker works	rag	de	das antwortende Dokument steht an erster Stelle - der Reranker funktioniert
+the answering document is not first - check the model	rag	de	das antwortende Dokument steht NICHT an erster Stelle - das Modell prüfen
+the nearest chunk is further away, so the semantic side returns nothing	rag	de	der nächste Chunk liegt weiter weg, die semantische Seite liefert daher nichts
+the related texts are closer - the model works	rag	de	die verwandten Texte liegen näher beieinander - das Modell funktioniert
+the schema stores vector(1024), other models need a schema change	rag	de	das Schema speichert vector(1024), andere Modelle brauchen eine Schema-Änderung
+the unrelated text is closer - check the model	rag	de	der nicht verwandte Text liegt näher - das Modell prüfen
 the wildcard, indicating zero or more characters. it can only appear at the end of a word.	rag	de	Der Platzhalter, der null oder mehr Zeichen angibt. Er kann nur am Ende eines Wortes stehen
 the word cannot appear in any row returned.	rag	de	Das Wort darf in keiner Zeile der Rückgabe vorkommen
 the word following contributes negatively to the relevance of the row.	rag	de	Das folgende Wort trägt negativ zur Relevanz der Zeile bei
@@ -75,6 +139,7 @@ url of openai compatible api	rag	de	URL der OpenAI kompatiblen API
 url of the rerank endpoint	rag	de	URL des Rerank-Endpunkts
 use operators:	rag	de	Operatoren verwenden:
 used to group words into subexpressions.	rag	de	Wird verwendet, um Wörter zu Unterausdrücken zu gruppieren
+vector index	rag	de	Vektor-Index
 weekday 0-6, 0=sun	rag	de	Wochentag 0-6, 0=Sonntag
 what type of search to use for search in %1	rag	de	Welche Art der Suche soll zum Suchen in der Anwendung %1 verwendet werden
 what type of search to use for search in adressbuch	rag	de	Welche Art der Suche soll zum Suchen im Adressbuch verwendet werden

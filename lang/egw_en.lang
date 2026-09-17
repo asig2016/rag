@@ -1,4 +1,8 @@
+%1 characters accepted	rag	en	%1 characters accepted
+%1 of %2 embeddings returned	rag	en	%1 of %2 embeddings returned
 0 = identical, 2 = opposite meaning, default 0.4	rag	en	0 = identical, 2 = opposite meaning, default 0.4
+a real search sends documents of %1 characters	rag	en	a real search sends documents of %1 characters
+a reranker needs a cross-encoder endpoint: llama.cpp --reranking, vllm, jina or huggingface tei.	rag	en	A reranker needs a cross-encoder endpoint: llama.cpp --reranking, vLLM, Jina or HuggingFace TEI.
 all supported	rag	en	All supported
 always use relevance	rag	en	Always use relevance
 anything enclosed in the double quotes is taken as a whole (so you can match phrases, for example).	rag	en	Anything enclosed in the double quotes is taken as a whole (so you can match phrases, for example)
@@ -6,21 +10,39 @@ api key	rag	en	API Key
 api of the rerank endpoint	rag	en	API of the rerank endpoint
 app	rag	en	App
 app id	rag	en	App ID
+application	rag	en	Application
 applications for rag / to calculate embeddings for	rag	en	Applications for RAG / to calculate embeddings for
 applications to add to fulltext-index	rag	en	Applications to add to fulltext-index
+async job	rag	en	Async Job
 async job settings (cron schedule): leave empty to use defaults.	rag	en	Async Job Settings (Cron Schedule): Leave empty to use defaults.
+both indexes	rag	en	Both indexes
+cached search patterns	rag	en	Cached search patterns
 change fulltext search pattern to match words starting with pattern	rag	en	Change fulltext search pattern to match words starting with pattern
+checks	rag	en	Checks
 chunk overlap	rag	en	Chunk overlap
 chunk size	rag	en	Chunk size
+chunks	rag	en	Chunks
 currently only embedding models with 1024 dimensions, like bge-m3 are supported!	rag	en	Currently only embedding models with 1024 dimensions, like bge-m3 are supported!
+database	rag	en	Database
 default sorting	rag	en	Default sorting
 default: */5 (=every 5 minutes)	rag	en	Default: */5 (=every 5 minutes)
+diagnostics	rag	en	Diagnostics
+dimensions	rag	en	Dimensions
 distance	rag	en	Distance
 distance/relevance	rag	en	Distance/Relevance
+document length	rag	en	Document length
 dow	rag	en	DoW
+embedding	rag	en	Embedding
 embedding configuration	rag	en	Embedding configuration
+embeddings only	rag	en	Embeddings only
+endpoint and models	rag	en	Endpoint and models
 enter your search query here...	rag	en	Enter your search query here...
+entries	rag	en	Entries
+even the best match scores below it - every match would be dropped	rag	en	even the best match scores below it - every match would be dropped
+even the related texts are further apart than that - matches will be dropped	rag	en	even the related texts are further apart than that - matches will be dropped
+every search still works, it silently keeps the order of the hybrid fusion and logs this error.	rag	en	Every search still works, it silently keeps the order of the hybrid fusion and logs this error.
 fulltext	rag	en	Fulltext
+fulltext index only	rag	en	Fulltext index only
 fulltext search	rag	en	Fulltext search
 fulltext search only	rag	en	Fulltext search only
 general configuration	rag	en	General configuration
@@ -30,38 +52,80 @@ hybrid search (rag+fulltext)	rag	en	Hybrid search (RAG + Fulltext)
 hybrid search: rag+fulltext	rag	en	Hybrid search: RAG+Fulltext
 identical	rag	en	identical
 in characters, incl. the context prefixed to every chunk. changing it re-embeds everything!	rag	en	In characters, incl. the context prefixed to every chunk. Changing it re-embeds everything!
+index now	rag	en	Index now
+index status	rag	en	Index status
+indexes for up to 30 seconds, so an installation can be tested without waiting for the async job.	rag	en	Indexes for up to 30 seconds, so an installation can be tested without waiting for the async job.
+installed	rag	en	installed
 last errors of rag's async job	rag	en	Last errors of RAG's async job
 leave empty to disable rag	rag	en	leave empty to disable RAG
 leave empty to switch the reranking off. a cross-encoder judges query and text together and orders the matches better, but it adds a request per search.	rag	en	Leave empty to switch the reranking off. A cross-encoder judges query and text together and orders the matches better, but it adds a request per search.
 leave empty to use the url above	rag	en	Leave empty to use the URL above
 legacy search	rag	en	Legacy search
 legacy search, as used before	rag	en	Legacy search, as used before
+llama.cpp refuses any single input longer than its physical batch, and one such document fails the whole request.	rag	en	llama.cpp refuses any single input longer than its physical batch, and one such document fails the whole request.
+mariadb 11.7+ is required for the vector type	rag	en	MariaDB 11.7+ is required for the vector type
 matches scored below are dropped, 0 keeps all of them	rag	en	Matches scored below are dropped, 0 keeps all of them
+max. distance	rag	en	Max. distance
 max. distance of a semantic match	rag	en	Max. distance of a semantic match
 max. runtime	rag	en	Max. Runtime
 minimize chunks e.g. concatenate title and description	rag	en	Minimize chunks e.g. concatenate title and description
 minimum score of the reranker	rag	en	Minimum score of the reranker
 model to rerank the best matches	rag	en	Model to rerank the best matches
 model to use	rag	en	Model to use
+models	rag	en	models
+models of the endpoint	rag	en	Models of the endpoint
 more candidates give a better order, but take longer: on a cpu about 1-3 seconds for 50.	rag	en	More candidates give a better order, but take longer: on a CPU about 1-3 seconds for 50.
+nearest chunks	rag	en	Nearest chunks
+next run	rag	en	next run
 no match	rag	en	no match
+no row carries a rerank score	rag	en	no row carries a rerank score
 no, use search-order chosen in app	rag	en	No, use search-order chosen in app
+none - nothing is embedded for this application yet	rag	en	none - nothing is embedded for this application yet
+not configured	rag	en	not configured
+not cosine - the k-nn query can not use the index	rag	en	not cosine - the k-NN query can not use the index
+not installed	rag	en	not installed
+not offered by the endpoint	rag	en	not offered by the endpoint
+not offered by the endpoint - a rerank endpoint does not have to list it though	rag	en	not offered by the endpoint - a rerank endpoint does not have to list it though
+not reachable	rag	en	not reachable
 number of results for the search in the applications' lists	rag	en	Number of results for the search in the applications' lists
+ollama has no rerank endpoint, having the model pulled is not enough.	rag	en	Ollama has no rerank endpoint, having the model pulled is not enough.
 operators	rag	en	Operators
 opposite	rag	en	opposite
+order	rag	en	Order
 please note: ollama must be bound to all interfaces, not just localhost!	rag	en	Please note: Ollama must be bound to all interfaces, NOT just localhost!
 query	rag	en	Query
 rag	common	en	RAG
 rag / semantic search	rag	en	RAG / Semantic search
 rag search	rag	en	RAG Search
 rag search only	rag	en	RAG search only
+ran %1 seconds	rag	en	ran %1 seconds
 relevance	rag	en	Relevance
+rerank endpoint %1 is not usable: %2	rag	en	Rerank endpoint %1 is not usable: %2
+rerank endpoint %1 refuses a document of %2 characters, as every search sends: %3	rag	en	Rerank endpoint %1 refuses a document of %2 characters, as every search sends: %3
+reranking	rag	en	Reranking
 reranking the best matches (optional)	rag	en	Reranking the best matches (optional)
+result	rag	en	Result
+run all checks	rag	en	Run all checks
+run it again to index the next batch, or save the configuration to let the async job do it.	rag	en	Run it again to index the next batch, or save the configuration to let the async job do it.
+run search	rag	en	Run search
+run the rerank check to see why	rag	en	Run the rerank check to see why
+save the configuration to install it - without it no index is ever updated	rag	en	Save the configuration to install it - without it no index is ever updated
+score	rag	en	Score
+scores	rag	en	scores
 search configuration	rag	en	Search configuration
 search in which applications	rag	en	Search in which applications
+semantics	rag	en	Semantics
 should search in apps be ordered by relevance	rag	en	Should search in apps be ordered by relevance
+shown	rag	en	shown
+start it with e.g. -ub 2048 -b 2048 -c 8192.	rag	en	Start it with e.g. -ub 2048 -b 2048 -c 8192.
 stop calculating embeddings after this time (in seconds). default: 285 (4min:45sec)	rag	en	Stop calculating embeddings after this time (in seconds). Default: 285 (4min:45sec)
 syntax error in fulltext search-pattern	common	en	Syntax error in fulltext search-pattern
+the answering document is first - the reranker works	rag	en	the answering document is first - the reranker works
+the answering document is not first - check the model	rag	en	the answering document is NOT first - check the model
+the nearest chunk is further away, so the semantic side returns nothing	rag	en	the nearest chunk is further away, so the semantic side returns nothing
+the related texts are closer - the model works	rag	en	the related texts are closer - the model works
+the schema stores vector(1024), other models need a schema change	rag	en	the schema stores vector(1024), other models need a schema change
+the unrelated text is closer - check the model	rag	en	the unrelated text is closer - check the model
 the wildcard, indicating zero or more characters. it can only appear at the end of a word.	rag	en	The wildcard, indicating zero or more characters. It can only appear at the end of a word
 the word cannot appear in any row returned.	rag	en	The word cannot appear in any row returned
 the word following contributes negatively to the relevance of the row.	rag	en	The word following contributes negatively to the relevance of the row
@@ -75,6 +139,7 @@ url of openai compatible api	rag	en	URL of OpenAI compatible API
 url of the rerank endpoint	rag	en	URL of the rerank endpoint
 use operators:	rag	en	Use operators:
 used to group words into subexpressions.	rag	en	Used to group words into subexpressions
+vector index	rag	en	Vector index
 weekday 0-6, 0=sun	rag	en	Weekday 0-6, 0=Sun
 what type of search to use for search in %1	rag	en	What type of search to use for search in %1
 what type of search to use for search in adressbuch	rag	en	What type of search to use for search in Adressbuch

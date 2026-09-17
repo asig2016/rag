@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-model href="../../../doc/etemplate2/etemplate2.0.rng" type="application/xml" schematypens="http://relaxng.org/ns/structure/1.0"?>
+<!DOCTYPE overlay PUBLIC "-//EGroupware GmbH//eTemplate 2.0//EN" "https://www.egroupware.org/etemplate2.0.dtd">
+<overlay>
+	<et2-template  id="rag.diagnostics" template="" lang="" group="0" version="26.1">
+		<et2-vbox  width="100%">
+			<et2-groupbox  summary="Checks">
+				<et2-hbox>
+					<et2-button  id="button[config]" label="Configuration" image="check"></et2-button>
+					<et2-button  id="button[endpoint]" label="Endpoint and models" image="network"></et2-button>
+					<et2-button  id="button[embedding]" label="Embedding" image="edit"></et2-button>
+					<et2-button  id="button[rerank]" label="Reranking" image="sort"></et2-button>
+					<et2-button  id="button[index_status]" label="Index status" image="list"></et2-button>
+					<et2-button  id="button[all]" label="Run all checks" image="apply"></et2-button>
+				</et2-hbox>
+			</et2-groupbox>
+			<et2-groupbox  summary="Search">
+				<et2-hbox>
+					<et2-textbox  id="search_pattern" placeholder="Enter your search query here..." width="300px"></et2-textbox>
+					<et2-select  id="search_type" width="200px"></et2-select>
+					<et2-select  id="search_app" emptyLabel="All supported" width="200px"></et2-select>
+					<et2-number  id="search_max_distance" min="0.05" max="2" precision="2" placeholder="Max. distance" width="120px"></et2-number>
+					<et2-button  id="button[search]" label="Run search" image="search"></et2-button>
+				</et2-hbox>
+			</et2-groupbox>
+			<et2-groupbox  summary="Index now">
+				<et2-hbox>
+					<et2-select  id="index_scope" width="200px"></et2-select>
+					<et2-button  id="button[index_now]" label="Index now" image="timesheet"></et2-button>
+					<et2-description  value="Indexes for up to 30 seconds, so an installation can be tested without waiting for the async job."></et2-description>
+				</et2-hbox>
+			</et2-groupbox>
+			<et2-textarea  id="output" readonly="true" rows="28" width="100%" class="rag_diagnostics_output"></et2-textarea>
+		</et2-vbox>
+	</et2-template>
+</overlay>
