@@ -1375,9 +1375,18 @@ class Embedding
 			$join = ' LEFT JOIN '.self::FULLTEXT_TABLE.' ON entries.'.self::EMBEDDING_APP.'='.self::FULLTEXT_APP.
 				' AND entries.'.self::EMBEDDING_APP_ID.'='.self::FULLTEXT_APP_ID.' AND '.self::FULLTEXT_PART."=''";
 		}
-		$id_distance = [];
+		// FOUND_ROWS() reports the last query run, and readEntry() below runs one for every row without
+		// a fulltext title - so the rows have to be collected and the total read before any of those
+		$rows = [];
 		foreach($this->db->query('SELECT SQL_CALC_FOUND_ROWS '.implode(',', $cols).' FROM ('.$entries.') entries'.$join.
 			' ORDER BY '.self::validateOrder($order, 'distance'), __LINE__, __FILE__, $start, $num_rows) as $row)
+		{
+			$rows[] = $row;
+		}
+		$this->total = (int)$this->db->query('SELECT FOUND_ROWS()')->fetchColumn();
+
+		$id_distance = [];
+		foreach($rows as $row)
 		{
 			$id = $app && is_string($app) ? (int)$row[self::EMBEDDING_APP_ID] : $row[self::EMBEDDING_APP].':'.$row[self::EMBEDDING_APP_ID];
 			// if the app is not fulltext indexed, we won't get texts and need to query them separate from the app
@@ -1393,7 +1402,6 @@ class Embedding
 				'extra' => !empty($row['extra']) ? (is_array($row['extra']) ? $row['extra'] : (array)json_decode($row['extra'], true)) : [],
 			] : (float)$row['distance'];
 		}
-		$this->total = (int)$this->db->query('SELECT FOUND_ROWS()')->fetchColumn();
 		if (self::$log_level)
 		{
 			error_log(__METHOD__."('$pattern', '$app', start=$start, num_rows=$num_rows, max_distance=$max_distance) total=$this->total returning ".
