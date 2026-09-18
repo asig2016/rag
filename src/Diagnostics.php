@@ -437,8 +437,10 @@ class Diagnostics
 		{
 			$fulltext[$row[Embedding::FULLTEXT_APP]] = $row;
 		}
-		// an app switched off for the embeddings explains a 0% better than the number does
+		// an app switched off for one of the indexes explains its numbers better than they do themselves
 		$rag_apps = $this->config['rag_apps'] ?? null;
+		$fulltext_apps = $this->config['fulltext_apps'] ?? null;
+		$unmaintained = false;
 		foreach(array_unique(array_merge(array_keys(Embedding::plugins()), array_keys($embeddings), array_keys($fulltext))) as $app)
 		{
 			$updated = max($embeddings[$app]['updated'] ?? '', $fulltext[$app]['updated'] ?? '');
@@ -456,8 +458,27 @@ class Diagnostics
 				// without a fulltext row per entry there is nothing to measure against
 				$percent = $of ? round(100 * $embedded / $of, 1).'%' : ($embedded ? '?' : '-');
 			}
+			// ENTRIES, not rows: an entry can have several fulltext rows (a tracker item and its
+			// replies), so the raw row count reads higher than the number of entries and is not
+			// comparable with the total next to it. The parts are appended as "+N" when there are any.
+			$ft_entries = (int)($fulltext[$app]['entries'] ?? 0);
+			$ft_parts = (int)($fulltext[$app]['rows_'] ?? 0) - $ft_entries;
+			$ft = $ft_entries.($ft_parts > 0 ? '+'.$ft_parts : '');
+			// a number here says what IS indexed, not that it stays that way: an app not in the
+			// fulltext-apps is not updated any more, and silently drifts from the moment an entry changes
+			if ($ft_entries && !empty($fulltext_apps) && !in_array($app, $fulltext_apps))
+			{
+				$ft .= '*';
+				$unmaintained = true;
+			}
 			$lines[] = self::row([$app, $total ?? '?', $embedded, $percent, (int)($embeddings[$app]['chunks'] ?? 0),
-				(int)($fulltext[$app]['rows_'] ?? 0), $updated ? Api\DateTime::to($updated) : '-']);
+				$ft, $updated ? Api\DateTime::to($updated) : '-']);
+		}
+		if ($unmaintained)
+		{
+			$lines[] = '';
+			$lines[] = '* '.lang('not in %1, so this index is no longer updated and drifts as soon as an entry changes',
+				'"'.lang('Applications to add to fulltext-index').'"');
 		}
 		$lines[] = '';
 		$lines[] = self::line(lang('Cached search patterns'),

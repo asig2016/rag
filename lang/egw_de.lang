@@ -147,3 +147,4 @@ what type of search to use for search in the apps	rag	de	Welche Art der Suche so
 embedded	rag	de	Eingebettet
 timeout of a search scoped by the list's filters	rag	de	Zeitlimit einer durch die Filter der Liste eingegrenzten Suche
 such a search runs inside the filters of the list instead of being intersected with them afterwards. above this many seconds it falls back to the previous, unscoped search. 0 switches the limit off.	rag	de	Eine solche Suche läuft innerhalb der Filter der Liste, statt erst danach mit ihnen geschnitten zu werden. Oberhalb dieser Sekunden fällt sie auf die bisherige, nicht eingegrenzte Suche zurück. 0 schaltet das Limit ab.
+not in %1, so this index is no longer updated and drifts as soon as an entry changes	rag	de	nicht in %1, dieser Index wird daher nicht mehr aktualisiert und weicht ab, sobald sich ein Eintrag ändert
