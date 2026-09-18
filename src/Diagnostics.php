@@ -418,9 +418,9 @@ class Diagnostics
 	protected function checkIndex() : array
 	{
 		$db = $GLOBALS['egw']->db;
-		$lines = [self::row([lang('Application'), lang('Entries'), lang('Embedded').' %', lang('Chunks'),
-			lang('Fulltext'), lang('last').' '.lang('update')])];
-		$lines[] = str_repeat('-', 90);
+		$lines = [self::row([lang('Application'), lang('Total'), lang('Entries'), lang('Embedded').' %',
+			lang('Chunks'), lang('Fulltext'), lang('last').' '.lang('update')])];
+		$lines[] = str_repeat('-', 94);   // the sum of the column widths in row(), plus their separators
 
 		$embeddings = $fulltext = [];
 		foreach($db->select(Embedding::TABLE, [Embedding::EMBEDDING_APP, 'COUNT(*) AS chunks',
@@ -443,7 +443,10 @@ class Diagnostics
 		{
 			$updated = max($embeddings[$app]['updated'] ?? '', $fulltext[$app]['updated'] ?? '');
 			$embedded = (int)($embeddings[$app]['entries'] ?? 0);
-			$of = (int)($fulltext[$app]['entries'] ?? 0);
+			// the application's own entries, which is what "how much of it is embedded" is about - the
+			// fulltext column counts ROWS, and an entry can have several (replies, files) or none
+			$total = $this->appTotal($app);
+			$of = $total ?? (int)($fulltext[$app]['entries'] ?? 0);
 			if (empty($this->config['url']) || !empty($rag_apps) && !in_array($app, $rag_apps))
 			{
 				$percent = lang('off');     // not embedded on purpose, 0% would look like a failure
@@ -453,7 +456,7 @@ class Diagnostics
 				// without a fulltext row per entry there is nothing to measure against
 				$percent = $of ? round(100 * $embedded / $of, 1).'%' : ($embedded ? '?' : '-');
 			}
-			$lines[] = self::row([$app, $embedded, $percent, (int)($embeddings[$app]['chunks'] ?? 0),
+			$lines[] = self::row([$app, $total ?? '?', $embedded, $percent, (int)($embeddings[$app]['chunks'] ?? 0),
 				(int)($fulltext[$app]['rows_'] ?? 0), $updated ? Api\DateTime::to($updated) : '-']);
 		}
 		$lines[] = '';
@@ -709,6 +712,32 @@ class Diagnostics
 	}
 
 	/**
+	 * How many entries the application itself has, the denominator of "how much of it is embedded"
+	 *
+	 * Every plugin declares its table and what counts as deleted, so this works for any of them
+	 * without the RAG knowing the application. Null when it cannot be counted - a plugin without a
+	 * table constant, or a table that is not installed.
+	 *
+	 * @param string $app
+	 * @return int|null
+	 */
+	protected function appTotal(string $app) : ?int
+	{
+		$class = Embedding::plugins()[$app] ?? null;
+		if (!$class || !defined($class.'::TABLE') || !constant($class.'::TABLE'))
+		{
+			return null;
+		}
+		try {
+			return (int)$GLOBALS['egw']->db->select(constant($class.'::TABLE'), 'COUNT(*)',
+				constant($class.'::NOT_DELETED') ?: [], __LINE__, __FILE__, false, '', $app)->fetchColumn();
+		}
+		catch (\Throwable $e) {
+			return null;    // table of an app that is not installed (any more)
+		}
+	}
+
+	/**
 	 * One row of the index-status table
 	 *
 	 * sprintf('%-20s') pads to a number of BYTES, and the column headers are translated - "Εφαρμογή"
@@ -720,7 +749,7 @@ class Diagnostics
 	 */
 	protected static function row(array $cells) : string
 	{
-		static $widths = [20, 10, 8, 10, 10, 20];
+		static $widths = [20, 10, 10, 8, 10, 10, 20];
 		$out = [];
 		foreach(array_values($cells) as $n => $cell)
 		{
