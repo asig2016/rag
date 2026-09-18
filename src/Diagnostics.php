@@ -418,9 +418,9 @@ class Diagnostics
 	protected function checkIndex() : array
 	{
 		$db = $GLOBALS['egw']->db;
-		$lines = [sprintf('%-20s %12s %12s %12s %20s', lang('Application'), lang('Entries'), lang('Chunks'),
-			lang('Fulltext'), lang('last').' '.lang('update'))];
-		$lines[] = str_repeat('-', 80);
+		$lines = [self::row([lang('Application'), lang('Entries'), lang('Embedded').' %', lang('Chunks'),
+			lang('Fulltext'), lang('last').' '.lang('update')])];
+		$lines[] = str_repeat('-', 90);
 
 		$embeddings = $fulltext = [];
 		foreach($db->select(Embedding::TABLE, [Embedding::EMBEDDING_APP, 'COUNT(*) AS chunks',
@@ -429,18 +429,32 @@ class Diagnostics
 		{
 			$embeddings[$row[Embedding::EMBEDDING_APP]] = $row;
 		}
+		// "entries" counts the rows of the entry itself (part ''), not its separately indexed parts,
+		// so it is the number of entries the embeddings are measured against
 		foreach($db->select(Embedding::FULLTEXT_TABLE, [Embedding::FULLTEXT_APP, 'COUNT(*) AS rows_',
-			'MAX('.Embedding::FULLTEXT_UPDATED.') AS updated'],
+			'SUM('.Embedding::FULLTEXT_PART."='') AS entries", 'MAX('.Embedding::FULLTEXT_UPDATED.') AS updated'],
 			[], __LINE__, __FILE__, false, 'GROUP BY '.Embedding::FULLTEXT_APP, self::APP) as $row)
 		{
 			$fulltext[$row[Embedding::FULLTEXT_APP]] = $row;
 		}
+		// an app switched off for the embeddings explains a 0% better than the number does
+		$rag_apps = $this->config['rag_apps'] ?? null;
 		foreach(array_unique(array_merge(array_keys(Embedding::plugins()), array_keys($embeddings), array_keys($fulltext))) as $app)
 		{
 			$updated = max($embeddings[$app]['updated'] ?? '', $fulltext[$app]['updated'] ?? '');
-			$lines[] = sprintf('%-20s %12s %12s %12s %20s', $app,
-				(int)($embeddings[$app]['entries'] ?? 0), (int)($embeddings[$app]['chunks'] ?? 0),
-				(int)($fulltext[$app]['rows_'] ?? 0), $updated ? Api\DateTime::to($updated) : '-');
+			$embedded = (int)($embeddings[$app]['entries'] ?? 0);
+			$of = (int)($fulltext[$app]['entries'] ?? 0);
+			if (empty($this->config['url']) || !empty($rag_apps) && !in_array($app, $rag_apps))
+			{
+				$percent = lang('off');     // not embedded on purpose, 0% would look like a failure
+			}
+			else
+			{
+				// without a fulltext row per entry there is nothing to measure against
+				$percent = $of ? round(100 * $embedded / $of, 1).'%' : ($embedded ? '?' : '-');
+			}
+			$lines[] = self::row([$app, $embedded, $percent, (int)($embeddings[$app]['chunks'] ?? 0),
+				(int)($fulltext[$app]['rows_'] ?? 0), $updated ? Api\DateTime::to($updated) : '-']);
 		}
 		$lines[] = '';
 		$lines[] = self::line(lang('Cached search patterns'),
@@ -692,6 +706,29 @@ class Diagnostics
 	{
 		$marker = ['ok' => '[OK]  ', 'warn' => '[WARN]', 'fail' => '[FAIL]'][$status] ?? '      ';
 		return $marker.' '.str_pad($label.':', 48).' '.$value.($comment ? ' - '.$comment : '');
+	}
+
+	/**
+	 * One row of the index-status table
+	 *
+	 * sprintf('%-20s') pads to a number of BYTES, and the column headers are translated - "Εφαρμογή"
+	 * is 8 characters but 16 bytes, which shifts the whole header against its rows in every language
+	 * that is not latin-1. So the padding is done on characters.
+	 *
+	 * @param array $cells first one left-aligned, the rest right-aligned
+	 * @return string
+	 */
+	protected static function row(array $cells) : string
+	{
+		static $widths = [20, 10, 8, 10, 10, 20];
+		$out = [];
+		foreach(array_values($cells) as $n => $cell)
+		{
+			$cell = (string)$cell;
+			$pad = max(0, ($widths[$n] ?? 10) - mb_strlen($cell));
+			$out[] = $n ? str_repeat(' ', $pad).$cell : $cell.str_repeat(' ', $pad);
+		}
+		return implode(' ', $out);
 	}
 
 	/**
