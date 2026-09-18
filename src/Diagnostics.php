@@ -419,8 +419,8 @@ class Diagnostics
 	{
 		$db = $GLOBALS['egw']->db;
 		$lines = [self::row([lang('Application'), lang('Total'), lang('Entries'), lang('Embedded').' %',
-			lang('Chunks'), lang('Fulltext'), lang('last').' '.lang('update')])];
-		$lines[] = str_repeat('-', 94);   // the sum of the column widths in row(), plus their separators
+			lang('Chunks'), lang('Fulltext'), lang('Fulltext').' %', lang('last').' '.lang('update')])];
+		$lines[] = str_repeat('-', 103);   // the sum of the column widths in row(), plus their separators
 
 		$embeddings = $fulltext = [];
 		foreach($db->select(Embedding::TABLE, [Embedding::EMBEDDING_APP, 'COUNT(*) AS chunks',
@@ -471,8 +471,18 @@ class Diagnostics
 				$ft .= '*';
 				$unmaintained = true;
 			}
+			// measured against the same total as the embeddings, so the two percentages are comparable.
+			// The count keeps its "*": a frozen index can read 100% and still be wrong tomorrow.
+			if (!$ft_entries && !empty($fulltext_apps) && !in_array($app, $fulltext_apps))
+			{
+				$ft_percent = lang('off');
+			}
+			else
+			{
+				$ft_percent = $total ? round(100 * $ft_entries / $total, 1).'%' : ($ft_entries ? '?' : '-');
+			}
 			$lines[] = self::row([$app, $total ?? '?', $embedded, $percent, (int)($embeddings[$app]['chunks'] ?? 0),
-				$ft, $updated ? Api\DateTime::to($updated) : '-']);
+				$ft, $ft_percent, $updated ? Api\DateTime::to($updated) : '-']);
 		}
 		if ($unmaintained)
 		{
@@ -770,7 +780,7 @@ class Diagnostics
 	 */
 	protected static function row(array $cells) : string
 	{
-		static $widths = [20, 10, 10, 8, 10, 10, 20];
+		static $widths = [20, 10, 10, 8, 10, 10, 8, 20];
 		$out = [];
 		foreach(array_values($cells) as $n => $cell)
 		{
