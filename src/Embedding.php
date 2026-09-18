@@ -105,6 +105,14 @@ class Embedding
 	 */
 	protected static int $search_depth = 200;
 	/**
+	 * @var float seconds a scoped search may take before it falls back to the unscoped one, 0: no limit
+	 *
+	 * Only a safety net for the app-filter join: when the filter matches a large, heavily embedded set
+	 * the optimizer can pick a brute-force distance scan (~30us per chunk here). It costs nothing while
+	 * queries are fast, which they are - tens of ms measured.
+	 */
+	protected static float $search_timeout = 10.0;
+	/**
 	 * Constant k of Reciprocal Rank Fusion: bigger values weigh the top ranks of each list less
 	 */
 	const RRF_K = 60;
@@ -251,6 +259,7 @@ class Embedding
 		self::$minimize_chunks = ($config['minimize_chunks'] ?? 'yes') !== 'no';
 		self::$max_distance = is_numeric($config['max_distance'] ?? null) && $config['max_distance'] > 0 ? (float)$config['max_distance'] : .4;
 		self::$search_depth = (int)($config['search_depth'] ?? 200) ?: 200;
+		self::$search_timeout = (float)($config['search_timeout'] ?? 10);
 
 		self::$rerank_model = !empty($config['rerank_model']) ? $config['rerank_model'] : null;
 		self::$rerank_url = !empty($config['rerank_url']) ? $config['rerank_url'] : null;
@@ -332,7 +341,8 @@ class Embedding
 	 * @param ?int[] $app_ids optional limit the search to these ids of $app
 	 * @return bool false: search not available, or configured to be off, true: search available and implemented via changed parameters
 	 */
-	public static function search2criteria(string $app, string &$criteria, &$order_by, &$extra_cols, ?array &$filter, ?array $app_ids=null) : bool
+	public static function search2criteria(string $app, string &$criteria, &$order_by, &$extra_cols, ?array &$filter, ?array $app_ids=null,
+		?string $app_filter=null) : bool
 	{
 		$criteria_in = $criteria;
 		// Contacts class in API uses "api", but the app is / has to be "addressbook"
@@ -362,7 +372,7 @@ class Embedding
 		$rag = new self();
 		$search = $search === 'hybrid' ? 'search' : 'search'.ucfirst($search === 'rag' ? 'Embeddings' : $search);
 		try {
-			$ids = $rag->$search($criteria, $app, 0, self::$search_depth, app_ids: $app_ids);
+			$ids = $rag->$search($criteria, $app, 0, self::$search_depth, app_ids: $app_ids, app_filter: $app_filter);
 		}
 		catch (InvalidFulltextSyntax $e) {
 			Api\Json\Response::get()->message($e->getMessage(), 'error');
@@ -953,16 +963,18 @@ class Embedding
 	 * @throws Api\Db\Exception\InvalidSql
 	 */
 	public function search(string $pattern, $app=null, int $start=0, int $num_rows=50, bool $return_all=false,
-	                       string $order='default', ?float $max_distance=null, float $min_relevance=0.05, ?array $app_ids=null) : array
+	                       string $order='default', ?float $max_distance=null, float $min_relevance=0.05, ?array $app_ids=null,
+	                       ?string $app_filter=null) : array
 	{
 		if (!$this->client)
 		{
-			return $this->searchFulltext($pattern, $app, $start, $num_rows, $return_all, $order, $min_relevance, null, $app_ids);
+			return $this->searchFulltext($pattern, $app, $start, $num_rows, $return_all, $order, $min_relevance, null, $app_ids,
+				app_filter: $app_filter);
 		}
 		// both lists need to reach at least as deep as the requested page, and a bit further to fuse sensibly
 		$depth = max($start + $num_rows, 100);
 		try {
-			$embedding_matches = $this->searchEmbeddings($pattern, $app, 0, $depth, $return_all, 'default', $max_distance, $app_ids);
+			$embedding_matches = $this->searchEmbeddings($pattern, $app, 0, $depth, $return_all, 'default', $max_distance, $app_ids, $app_filter);
 			$total_embeddings = $this->total ?? 0;
 		}
 		catch (InvalidSql $e) {
@@ -974,7 +986,8 @@ class Embedding
 			$embedding_matches = [];
 			$total_embeddings = 0;
 		}
-		$fulltext_matches = $this->searchFulltext($pattern, $app, 0, $depth, $return_all, 'default', $min_relevance, null, $app_ids);
+		$fulltext_matches = $this->searchFulltext($pattern, $app, 0, $depth, $return_all, 'default', $min_relevance, null, $app_ids,
+			app_filter: $app_filter);
 		$total_fulltext = $this->total ?? 0;
 
 		$scores = self::rrf([$embedding_matches, $fulltext_matches]);
@@ -1297,6 +1310,86 @@ class Embedding
 	}
 
 	/**
+	 * Alias the app-filter sub-query gives its id column - defined by core, which builds the sub-query
+	 */
+	const APP_FILTER_ID = Api\Storage\Base::RAG_FILTER_ID;
+
+	/**
+	 * JOIN restricting a search to the entries an application's own filters allow
+	 *
+	 * The app hands us a sub-query selecting its ids (aliased self::APP_FILTER_ID), not a list of ids:
+	 * a list has to be produced up-front and capped, and above that cap the search runs unscoped and
+	 * is intersected afterwards - which silently drops every match outside the k best hits. As a join
+	 * MariaDB decides per query: it keeps the vector index when the filter is broad, and drives from
+	 * the app's own table (exact) when it is selective.
+	 *
+	 * Note this does NOT make a broad search exact - the inner LIMIT $k still cuts. What it fixes is
+	 * the selective case, where the k nearest chunks globally contain none of the filtered entries.
+	 *
+	 * @param ?string $app_filter sub-query or null
+	 * @param string $id_column our column to join it on, EMBEDDING_APP_ID or FULLTEXT_APP_ID
+	 * @return string '' if there is no filter
+	 */
+	protected static function appFilterJoin(?string $app_filter, string $id_column) : string
+	{
+		return empty($app_filter) ? '' :
+			' JOIN ('.$app_filter.') app_filter ON app_filter.'.self::APP_FILTER_ID.'='.$id_column;
+	}
+
+	/**
+	 * Prefix a query with a time limit, so one pathological plan cannot hang a list
+	 *
+	 * @param string $sql
+	 * @return string
+	 */
+	protected static function timeLimited(string $sql) : string
+	{
+		// %F, not a plain cast: a small float would render as 1.0E-6, which is not what we mean to send
+		return self::$search_timeout > 0 ?
+			'SET STATEMENT max_statement_time='.sprintf('%.3F', self::$search_timeout).' FOR '.$sql : $sql;
+	}
+
+	/**
+	 * Did this query die on our own time limit, rather than for a real reason?
+	 *
+	 * @param \Throwable $e
+	 * @return bool
+	 */
+	protected static function isTimeout(\Throwable $e) : bool
+	{
+		// 1969 is the abort itself; a query that follows it on the same connection can surface as 188
+		// ("Operation was interrupted"). We only ever ask this when WE set a limit on a scoped search,
+		// so treating both as ours is safe: the fallback just repeats the search unscoped.
+		return self::$search_timeout > 0 &&
+			(in_array($e->getCode(), [1969, 188]) ||
+				stripos($e->getMessage(), 'max_statement_time exceeded') !== false ||
+				stripos($e->getMessage(), 'was interrupted') !== false);
+	}
+
+	/**
+	 * Can we splice $sql into the innermost block of a search?
+	 *
+	 * It has to be a plain, mergeable SELECT - anything the optimizer has to materialize takes away
+	 * the choice of plan that makes the join worthwhile.
+	 *
+	 * This is NOT a sanitizer and must not be mistaken for one. The sub-query is built by core from
+	 * the same $filter the caller's own list query is built from: whatever could be injected here is
+	 * already in that query verbatim, and rejecting it here would not prevent anything. The trust
+	 * boundary is where integer-keyed col_filter entries are stripped from client input
+	 * (Api\Etemplate\Widget\Nextmatch::ajax_get_rows()), not here.
+	 *
+	 * @param ?string $sql
+	 * @return bool
+	 */
+	public static function validFilterSubquery(?string $sql) : bool
+	{
+		return !empty($sql) && preg_match('/^\s*SELECT\s/i', $sql) &&
+			stripos($sql, ' AS '.self::APP_FILTER_ID) !== false &&
+			!preg_match('/\b(GROUP\s+BY|HAVING|LIMIT|DISTINCT|UNION|ORDER\s+BY|PROCEDURE|INTO)\b/i', $sql) &&
+			strpos($sql, ';') === false;
+	}
+
+	/**
 	 * Semantic search in given app for $pattern
 	 *
 	 * Returns found IDs and their distance ordered by the smallest distance / the best match first.
@@ -1315,9 +1408,13 @@ class Embedding
 	 * @throws Api\Db\Exception\InvalidSql
 	 */
 	public function searchEmbeddings(string $pattern, $app=null, int $start=0, int $num_rows=50, bool $return_all=false,
-	                                 string $order='default', ?float $max_distance=null, ?array $app_ids=null) : array
+	                                 string $order='default', ?float $max_distance=null, ?array $app_ids=null,
+	                                 ?string $app_filter=null) : array
 	{
 		$max_distance ??= self::$max_distance;
+		// a sub-query scopes ONE app's entries, it must never be joined onto a multi-app or global search
+		if (!is_string($app) || $app === '' || !self::validFilterSubquery($app_filter)) $app_filter = null;
+		if (isset($app_filter)) $app_ids = null;     // same intent, applying both only costs
 		// we remove boolean mode fulltext operators
 		if (preg_match(self::BOOLEAN_MODE_OPERATORS_PREG, $pattern))
 		{
@@ -1350,7 +1447,10 @@ class Embedding
 		}
 		$where = [];
 		if ($app) $where[] = $this->db->expression(self::TABLE, [self::EMBEDDING_APP => $app]);
-		if ($app_ids) $where[] = self::EMBEDDING_APP_ID.' IN ('.implode(',', array_map('intval', $app_ids)).')';
+		// the app's own filters as a join - see appFilterJoin(). The id-list is the fallback for the
+		// apps and storages that cannot express themselves as a mergeable sub-query.
+		$from = self::TABLE.self::appFilterJoin($app_filter, self::TABLE.'.'.self::EMBEDDING_APP_ID);
+		if ($app_ids) $where[] = self::TABLE.'.'.self::EMBEDDING_APP_ID.' IN ('.implode(',', array_map('intval', $app_ids)).')';
 
 		// k-nearest chunks: MariaDB only uses the vector index for exactly this shape, ORDER BY the distance function
 		// (with the distance the index was built with) ASC plus a LIMIT, therefore the entry level grouping,
@@ -1358,7 +1458,7 @@ class Embedding
 		$k = min(max(500, 5 * ($start + $num_rows)), 10000);
 		$knn = 'SELECT '.self::EMBEDDING_APP.','.self::EMBEDDING_APP_ID.','.self::EMBEDDING_MODIFIED.
 			',VEC_DISTANCE_COSINE('.self::EMBEDDING.', '.$this->db->quote($response[0]->embedding, 'vector').') AS distance'.
-			' FROM '.self::TABLE.($where ? ' WHERE '.implode(' AND ', $where) : '').
+			' FROM '.$from.($where ? ' WHERE '.implode(' AND ', $where) : '').
 			' ORDER BY distance LIMIT '.$k;
 		// best chunk per entry, so every entry counts once for LIMIT and total
 		$entries = 'SELECT '.self::EMBEDDING_APP.','.self::EMBEDDING_APP_ID.',MIN(distance) AS distance,MAX('.self::EMBEDDING_MODIFIED.') AS modified'.
@@ -1378,10 +1478,32 @@ class Embedding
 		// FOUND_ROWS() reports the last query run, and readEntry() below runs one for every row without
 		// a fulltext title - so the rows have to be collected and the total read before any of those
 		$rows = [];
-		foreach($this->db->query('SELECT SQL_CALC_FOUND_ROWS '.implode(',', $cols).' FROM ('.$entries.') entries'.$join.
-			' ORDER BY '.self::validateOrder($order, 'distance'), __LINE__, __FILE__, $start, $num_rows) as $row)
-		{
-			$rows[] = $row;
+		try {
+			foreach($this->db->query(self::timeLimited('SELECT SQL_CALC_FOUND_ROWS '.implode(',', $cols).' FROM ('.$entries.') entries'.$join.
+				' ORDER BY '.self::validateOrder($order, 'distance')), __LINE__, __FILE__, $start, $num_rows) as $row)
+			{
+				$rows[] = $row;
+			}
+		}
+		catch (\Throwable $e) {
+			// a scoped search that runs into the limit falls back to the unscoped one: that is what it
+			// did before there was a join, so this can never be worse than not having tried
+			if (!$app_filter || !self::isTimeout($e)) throw $e;
+			// NOT the original exception: a Db exception's message carries the whole statement, which
+			// here contains the list's filter values, and logError() persists it to a config an admin
+			// reads. The fact that it timed out is all anyone can act on.
+			self::logError(new \Exception('scoped search exceeded '.self::$search_timeout.'s, fell back to the unscoped one',
+				$e->getCode()), $app, false, ['app_filter' => true]);
+			// without the limit: we are already over budget, and the unscoped search is the one that
+			// ran before there was a join - retrying it under the same limit would only fail again
+			$timeout = self::$search_timeout;
+			self::$search_timeout = 0;
+			try {
+				return $this->searchEmbeddings($pattern, $app, $start, $num_rows, $return_all, $order, $max_distance);
+			}
+			finally {
+				self::$search_timeout = $timeout;
+			}
 		}
 		$this->total = (int)$this->db->query('SELECT FOUND_ROWS()')->fetchColumn();
 
@@ -1469,8 +1591,11 @@ class Embedding
 	 */
 	public function searchFulltext(string $pattern, $app=null, int $start=0, int $num_rows=50, bool $return_all=false,
 	                               string $order='default', float $min_relevance=0.05, ?string $mode=null, ?array $app_ids=null,
-	                               bool $require_all=true) : array
+	                               bool $require_all=true, ?string $app_filter=null) : array
 	{
+		// a sub-query scopes ONE app's entries, it must never be joined onto a multi-app or global search
+		if (!is_string($app) || $app === '' || !self::validFilterSubquery($app_filter)) $app_filter = null;
+		if (isset($app_filter)) $app_ids = null;
 		$pattern_in = $pattern;
 		$min_relevance_in = $min_relevance;
 		// did the user use operators himself, then we do not touch the pattern (checked before we add asterisks)
@@ -1512,20 +1637,28 @@ class Embedding
 		$match = 'MATCH('.self::FULLTEXT_TITLE.','.self::FULLTEXT_DESCRIPTION.','.self::FULLTEXT_EXTRA.') AGAINST('.$this->db->quote($pattern).' '.$mode.')';
 		$where = [];
 		if ($app) $where[] = $this->db->expression(self::FULLTEXT_TABLE, [self::FULLTEXT_APP => $app]);
-		if ($app_ids) $where[] = self::FULLTEXT_APP_ID.' IN ('.implode(',', array_map('intval', $app_ids)).')';
+		// see searchEmbeddings(): the app's filters as a join, an id-list only as the fallback. Unlike
+		// the k-NN the inner query below has no LIMIT, so scoping makes the fulltext side exact.
+		$from = self::FULLTEXT_TABLE.self::appFilterJoin($app_filter, self::FULLTEXT_TABLE.'.'.self::FULLTEXT_APP_ID);
+		if ($app_ids) $where[] = self::FULLTEXT_TABLE.'.'.self::FULLTEXT_APP_ID.' IN ('.implode(',', array_map('intval', $app_ids)).')';
 		$order = self::validateOrder($order, '!relevance');
 		try {
 			if ($min_relevance)
 			{
+				// $min_relevance is a FRACTION of the best match, so the probe has to see the same scope:
+				// measured against a global best match the threshold can exclude everything inside a
+				// narrow filter, which is the same "finds nothing" bug one level down
 				$max_relevance = $this->db->select(self::FULLTEXT_TABLE, $match.' AS relevance',
-					($app ? [self::FULLTEXT_APP => $app] : []) + [$match],
-					__LINE__, __FILE__, 0, 'ORDER BY relevance DESC', self::APP, 1)->fetchColumn();
+					array_merge($app ? [self::FULLTEXT_APP => $app] : [], [$match],
+						$app_ids ? [self::FULLTEXT_TABLE.'.'.self::FULLTEXT_APP_ID.' IN ('.implode(',', array_map('intval', $app_ids)).')'] : []),
+					__LINE__, __FILE__, 0, 'ORDER BY relevance DESC', self::APP, 1,
+					self::appFilterJoin($app_filter, self::FULLTEXT_TABLE.'.'.self::FULLTEXT_APP_ID))->fetchColumn();
 				$min_relevance *= $max_relevance;
 			}
 			// an entry can have several rows / parts, e.g. replies or files: the best matching one counts,
 			// so every entry uses one row of the requested page and of the total, like in searchEmbeddings()
 			$matches = 'SELECT '.self::FULLTEXT_APP.','.self::FULLTEXT_APP_ID.','.$match.' AS relevance,'.
-				self::FULLTEXT_MODIFIED.' FROM '.self::FULLTEXT_TABLE.
+				self::FULLTEXT_MODIFIED.' FROM '.$from.
 				' WHERE '.implode(' AND ', array_merge($where, [$match.' > '.(float)$min_relevance]));
 			$entries = 'SELECT '.self::FULLTEXT_APP.','.self::FULLTEXT_APP_ID.',MAX(relevance) AS relevance,MAX('.
 				self::FULLTEXT_MODIFIED.') AS modified FROM ('.$matches.') matches'.
@@ -1544,8 +1677,8 @@ class Embedding
 					' AND '.self::FULLTEXT_TABLE.'.'.self::FULLTEXT_PART."=''";
 			}
 			$id_relevance = [];
-			foreach ($this->db->query('SELECT SQL_CALC_FOUND_ROWS '.implode(',', $cols).' FROM ('.$entries.') entries'.$join.
-				' ORDER BY '.$order, __LINE__, __FILE__, $start, $num_rows) as $row)
+			foreach ($this->db->query(self::timeLimited('SELECT SQL_CALC_FOUND_ROWS '.implode(',', $cols).' FROM ('.$entries.') entries'.$join.
+				' ORDER BY '.$order), __LINE__, __FILE__, $start, $num_rows) as $row)
 			{
 				$id = $app && is_string($app) ? (int)$row[self::FULLTEXT_APP_ID] : $row[self::FULLTEXT_APP] . ':' . $row[self::FULLTEXT_APP_ID];
 				$id_relevance[$id] = $return_all ? [
@@ -1563,7 +1696,7 @@ class Embedding
 			{
 				// $min_relevance is the absolute threshold by now, the parameter is a fraction of the best match
 				return $this->searchFulltext($pattern_in, $app, $start, $num_rows, $return_all, $order,
-					$min_relevance_in, $mode, $app_ids, false);
+					$min_relevance_in, $mode, $app_ids, false, $app_filter);
 			}
 		}
 		catch (InvalidSql $e) {
@@ -1573,6 +1706,25 @@ class Embedding
 				throw new InvalidFulltextSyntax($e->getMessage(), $e->getCode(), $e, $pattern);
 			}
 			throw $e;
+		}
+		catch (\Throwable $e) {
+			// see searchEmbeddings(): a scoped search running into our own time limit falls back to the
+			// unscoped one - which is what it did before there was a join. 1969 is a plain Db exception,
+			// NOT an InvalidSql, so it needs its own catch.
+			if (!$app_filter || !self::isTimeout($e)) throw $e;
+			// see searchEmbeddings(): the exception's message is the whole statement
+			self::logError(new \Exception('scoped search exceeded '.self::$search_timeout.'s, fell back to the unscoped one',
+				$e->getCode()), $app, true, ['app_filter' => true]);
+			// see searchEmbeddings(): the fallback must not run into the same limit
+			$timeout = self::$search_timeout;
+			self::$search_timeout = 0;
+			try {
+				return $this->searchFulltext($pattern_in, $app, $start, $num_rows, $return_all, $order,
+					$min_relevance_in, $mode, null, $require_all);
+			}
+			finally {
+				self::$search_timeout = $timeout;
+			}
 		}
 		if (self::$log_level)
 		{
@@ -1667,26 +1819,6 @@ class Embedding
 	public static function orderByIds(array $id_distance, string $id_column) : string
 	{
 		return self::distanceById(array_flip(array_keys($id_distance)), $id_column);
-	}
-
-	/**
-	 * Semantic search in given app for $pattern
-	 *
-	 * Returns an SQL fragment for a column and a join.
-	 *
-	 * @param string $pattern search query
-	 * @param string $app app-name
-	 * @return string SQL fragment
-	 */
-	public function searchColumnJoin(string $pattern, string $app, ?string &$join=null) : string
-	{
-		$response = $this->client->embeddings()->create([
-			'model' => self::$model,
-			'input' => [$pattern],
-		]);
-		$plugin = ucfirst(__CLASS__.'\\'.ucfirst($app));
-		$plugin = new $plugin();
-		return $plugin->searchColumnJoin($response->embeddings[0]->embedding, $join);
 	}
 
 	/**

@@ -332,3 +332,123 @@ and needs the evaluation set to prove it helps (it adds a second endpoint and la
   after each phase. An exact keyword match must appear in the top 10.
 - UI: list search in Tracker / InfoLog in hybrid mode - sane counts, sorting by date and by relevance
   both work.
+
+## Scoping the search by the app's own filters (2026-09-18)
+
+The RAG used to be told which entries it may return as a **list of ids** (`app_ids` ->
+`rag_app_id IN (...)`). A list has to be produced up-front and capped, and above the cap the search
+ran unscoped and was intersected afterwards - which silently returns **nothing** as soon as the
+filter is selective enough that the k best hits globally contain none of its entries.
+
+It is now handed a **sub-query** instead (`$app_filter`), which
+`Embedding::appFilterJoin()` splices as a JOIN into the innermost k-NN / fulltext block:
+
+```sql
+FROM egw_rag JOIN (SELECT ac_emailstor.id AS rag_id FROM ac_emailstor ... WHERE ...) app_filter
+  ON app_filter.rag_id = egw_rag.rag_app_id
+WHERE rag_app='acemailstor' ORDER BY distance LIMIT <k>
+```
+
+Measured on dev5 (client with 3 embedded mails, pattern "Zahlung an das Finanzamt"):
+
+| | hits | the client's mails |
+| --- | --- | --- |
+| unscoped (`app_ids`, the old path) | 50 | **none** |
+| scoped (join) | 2 | **477, 479** - 4 ms instead of 107 ms |
+
+MariaDB picks the plan per query: `key: egw_rag_embedding` (the vector index) while the filter is
+broad, and driving from the app's own table - exact - once it is selective. A derived table is
+merged, so the sub-query costs nothing, as long as it stays mergeable: no GROUP BY / HAVING / LIMIT /
+DISTINCT / UNION, enforced by `Embedding::validFilterSubquery()` and by `ragFilterSubquery()`.
+
+**This does not make a broad search exact.** The inner `LIMIT $k` still cuts; what is fixed is the
+selective case.
+
+### Why this is not the join that was rejected in 73f1c10
+
+That commit removed `searchColumnJoin()` with *"joining the egw_rag table or using MIN(distance) and
+grouping by ID has a terrible performance"*. It is a different shape: a correlated
+`(SELECT MIN(VEC_DISTANCE_COSINE(...)))` evaluated per app row, which cannot use the vector index at
+all. A join *inside* the k-NN block keeps it - verified with EXPLAIN. The dead pair is deleted, so
+the two cannot be confused again.
+
+### Who builds the sub-query
+
+`Api\Storage\Base::ragFilterSubquery($filter, $join)` (core), from the same `$filter`/`$join` the
+list query itself uses, through the extracted `filter2where()` - so the RAG is scoped by exactly the
+set the list shows, and cannot drift from it. The search pattern is structurally excluded: at that
+point it is still `$criteria`, not SQL.
+
+`Api\Storage::process_search()` passes it on every search, so **acilog, infolog, tracker and
+addressbook are scoped for the first time** - that path passed no `app_ids` at all. It builds on
+copies of `$filter`/`$join`, because `cf_filter()` runs again further down and must not add its
+joins twice: the query that runs today is unchanged.
+
+`achelper_base`/`achelper_basecf` override it only to expand their own `extra_sql_statements`
+channel first. `$rag_filter_join = false` on a storage class opts out entirely.
+
+### Guardrail
+
+`search_timeout` (config, default 10 s) puts `SET STATEMENT max_statement_time=... FOR` in front of
+the two search queries. A scoped search that runs into it logs through `logError()` and **falls back
+to the unscoped search** - which is what ran before there was a join, so the join can never make a
+list slower than it used to be. The retry deliberately runs with the limit off: repeating it under
+the same limit would only fail again (it did, while this was being built).
+
+Recognising the abort needs both codes: the statement itself dies with 1969
+("max_statement_time exceeded"), but a query that follows it on the same connection can surface as
+188 ("Operation was interrupted"). `isTimeout()` only treats either as ours when we actually set a
+limit, and the fallback is harmless anyway.
+
+Measured: a selective scoped search takes 4 ms, the same one unscoped 107-155 ms. The limit is a
+safety net for a filter that matches a large, heavily embedded set, where the optimizer can pick a
+brute-force distance scan (~30 us per chunk).
+
+### Tests
+
+- `rag/tests/FilterJoinTest.php` - no database: the join is emitted for a usable sub-query and
+  refused for every shape that would be materialized (GROUP BY, LIMIT, DISTINCT, UNION, ORDER BY,
+  HAVING, a missing alias, a second statement).
+- `rag/tests/ScopedSearchTest.php` - scopes a search to a single embedded entry with
+  `max_distance = 2`, so nothing can be dropped for being far away, and asserts the result is exactly
+  that entry. Data-independent: it picks whatever is embedded. **Verified to fail without the join**
+  (it returns 50 unrelated ids). It connects to the database itself instead of extending
+  `LoggedInTest`, which needs credentials that are not available in every environment.
+
+### Security review of the join (2026-09-18)
+
+**No new injection vector.** The sub-query is built by `Api\Storage\Base::ragFilterSubquery()` from
+the very same `$filter`/`$join` the caller's own list query is built from, through the same
+`filter2where()` + `Api\Db::expression()` path. Whatever could be injected through it is already in
+the list query verbatim; the RAG just gets a second copy of it.
+
+Verified rather than argued:
+
+- **Values are escaped.** A filter value of `a' OR 1=1 -- ` comes out as
+  `WHERE ac_emailstor.ro_subject='a\' OR 1=1 -- '` - inert. User-supplied *values* cannot inject.
+- **`filter2where()` is behaviour-identical** to the code it was extracted from, checked across
+  plain columns, empty values, raw fragments, `!''`, arrays, `0` and `null` - it is now on every
+  search in EGroupware, so this mattered more than the feature itself.
+- **Integer-keyed `col_filter` entries are raw SQL by design**, and the trust boundary that keeps
+  client data out of them is `Nextmatch::ajax_get_rows()`
+  (`array_filter(..., fn($key) => !is_int($key), ARRAY_FILTER_USE_KEY)`), repeated in
+  `achelper_base`, `acemailstor_ui` and `acilog_ui` on their ajax entry points. `validFilterSubquery()`
+  is a *mergeability* check, **not** a sanitizer, and its docblock says so: a `/*!50000 UNION*/`
+  style comment would pass it, and would equally be in the list query.
+- **No ACL weakening.** The sub-query only ever narrows the set, and the ids the RAG returns are
+  still ANDed into the app's own query, which re-applies its filters and ACL. The timeout fallback
+  returns to the previously-normal unscoped search, which is re-filtered the same way.
+
+Two things were changed because of this review:
+
+- `logError()` persists `$e->getMessage()` into `rag-last-errors`, an admin-readable config - and a
+  `Db` exception's message is the **whole statement**, here including the list's filter values. The
+  timeout path now logs a purpose-built message instead of the original exception. (Pre-existing
+  entries in that config already contain far more: full mail subjects and bodies from indexing
+  errors. Worth a separate look.)
+- `ragFilterSubquery()` is `protected`, not `public`: nothing outside the class hierarchy needs a
+  raw-SQL builder.
+
+Known, accepted: a filter *value* containing `;` makes `validFilterSubquery()` refuse the sub-query,
+so that search silently falls back to the id-list path. It is safe, just less exact, and the
+alternative is parsing SQL to tell a quoted `;` from a statement separator.
