@@ -145,3 +145,5 @@ what type of search to use for search in %1	rag	en	What type of search to use fo
 what type of search to use for search in adressbuch	rag	en	What type of search to use for search in Adressbuch
 what type of search to use for search in the apps	rag	en	What type of search to use for search in the apps
 embedded	rag	en	Embedded
+timeout of a search scoped by the list's filters	rag	en	Timeout of a search scoped by the list's filters
+such a search runs inside the filters of the list instead of being intersected with them afterwards. above this many seconds it falls back to the previous, unscoped search. 0 switches the limit off.	rag	en	Such a search runs inside the filters of the list instead of being intersected with them afterwards. Above this many seconds it falls back to the previous, unscoped search. 0 switches the limit off.

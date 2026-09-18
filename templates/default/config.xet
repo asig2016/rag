@@ -89,6 +89,13 @@
 					<et2-number id="newsettings[search_depth]" min="50" max="5000" precision="0" placeholder="200"></et2-number>
 				</row>
 				<row>
+					<et2-description  value="Timeout of a search scoped by the list's filters"></et2-description>
+					<et2-hbox>
+						<et2-number id="newsettings[search_timeout]" min="0" max="120" precision="1" placeholder="10"></et2-number>
+						<et2-description label="Such a search runs inside the filters of the list instead of being intersected with them afterwards. Above this many seconds it falls back to the previous, unscoped search. 0 switches the limit off."></et2-description>
+					</et2-hbox>
+				</row>
+				<row>
 					<et2-description  value="Reranking the best matches (optional)" span="all" class="subHeader"></et2-description>
 				</row>
 				<row>

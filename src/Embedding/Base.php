@@ -211,19 +211,6 @@ abstract class Base
 	}
 
 	/**
-	 * Return SQL fragment to search entries similar to the given embedding
-	 *
-	 * @param array $embedding embedding for the pattern to search
-	 * @return string SQL fragment
-	 */
-	public function searchColumnJoin(array $embedding, ?string &$join=null)
-	{
-		$join = ' JOIN '.Embedding::TABLE.' ON '.Embedding::EMBEDDING_APP.'='.$this->db->quote(static::APP).
-			' AND '.Embedding::EMBEDDING_APP_ID.'='.static::TABLE.'.'.static::ID;
-		return '(SELECT MIN(VEC_DISTANCE_COSINE('.Embedding::EMBEDDING.', '.$this->db->quote($embedding, 'vector').')))';
-	}
-
-	/**
 	 * Get join for egw_rag(_fulltext) table to check of not yet updated/created embeddings/fulltext index
 	 *
 	 * @param array &$where
