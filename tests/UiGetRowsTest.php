@@ -85,7 +85,8 @@ class UiGetRowsTest extends Api\LoggedInTest
 			}
 
 			public function search(string $pattern, $app=null, int $start=0, int $num_rows=50,
-				bool $return_all=false, string $order='default', float $max_distance=.4, float $min_relevance=0.05) : array
+				bool $return_all=false, string $order='default', ?float $max_distance=null, float $min_relevance=0.05,
+				?array $app_ids=null, ?string $app_filter=null) : array
 			{
 				$this->calls[] = ['search', $pattern, $app, $start, $num_rows, $return_all, $order];
 				$this->total = $this->totalToSet;
@@ -93,7 +94,8 @@ class UiGetRowsTest extends Api\LoggedInTest
 			}
 
 			public function searchFulltext(string $pattern, $app=null, int $start=0, int $num_rows=50,
-				bool $return_all=false, string $order='default', float $min_relevance=0.05, ?string $mode=null) : array
+				bool $return_all=false, string $order='default', float $min_relevance=0.05, ?string $mode=null,
+				?array $app_ids=null, bool $require_all=true, ?string $app_filter=null) : array
 			{
 				$this->calls[] = ['searchFulltext', $pattern, $app, $start, $num_rows, $return_all, $order];
 				$this->total = $this->totalToSet;
@@ -101,7 +103,8 @@ class UiGetRowsTest extends Api\LoggedInTest
 			}
 
 			public function searchEmbeddings(string $pattern, $app=null, int $start=0, int $num_rows=50,
-				bool $return_all=false, string $order='default', float $max_distance=.4) : array
+				bool $return_all=false, string $order='default', ?float $max_distance=null,
+				?array $app_ids=null, ?string $app_filter=null) : array
 			{
 				$this->calls[] = ['searchEmbeddings', $pattern, $app, $start, $num_rows, $return_all, $order];
 				$this->total = $this->totalToSet;

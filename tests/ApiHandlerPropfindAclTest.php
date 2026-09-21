@@ -73,7 +73,8 @@ class ApiHandlerPropfindAclTest extends Api\LoggedInTest
 			}
 
 			public function search(string $pattern, $app=null, int $start=0, int $num_rows=50,
-				bool $return_all=false, string $order='default', float $max_distance=.4, float $min_relevance=0.05) : array
+				bool $return_all=false, string $order='default', ?float $max_distance=null, float $min_relevance=0.05,
+				?array $app_ids=null, ?string $app_filter=null) : array
 			{
 				$this->total = count($this->result);
 				// propfind_generator() loops chunk-by-chunk while search() keeps returning a

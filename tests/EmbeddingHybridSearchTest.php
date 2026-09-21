@@ -36,14 +36,16 @@ class EmbeddingHybridSearchTest extends Api\LoggedInTest
 			public int $fulltextTotal = 0;
 
 			public function searchEmbeddings(string $pattern, $app=null, int $start=0, int $num_rows=50,
-				bool $return_all=false, string $order='default', float $max_distance=.4) : array
+				bool $return_all=false, string $order='default', ?float $max_distance=null,
+				?array $app_ids=null, ?string $app_filter=null) : array
 			{
 				$this->total = $this->embeddingTotal;
 				return $this->embeddingResult;
 			}
 
 			public function searchFulltext(string $pattern, $app=null, int $start=0, int $num_rows=50,
-				bool $return_all=false, string $order='default', float $min_relevance=0.05, ?string $mode=null) : array
+				bool $return_all=false, string $order='default', float $min_relevance=0.05, ?string $mode=null,
+				?array $app_ids=null, bool $require_all=true, ?string $app_filter=null) : array
 			{
 				$this->total = $this->fulltextTotal;
 				return $this->fulltextResult;
@@ -69,7 +71,8 @@ class EmbeddingHybridSearchTest extends Api\LoggedInTest
 	{
 		$stub = new class extends Embedding {
 			public function searchFulltext(string $pattern, $app=null, int $start=0, int $num_rows=50,
-				bool $return_all=false, string $order='default', float $min_relevance=0.05, ?string $mode=null) : array
+				bool $return_all=false, string $order='default', float $min_relevance=0.05, ?string $mode=null,
+				?array $app_ids=null, bool $require_all=true, ?string $app_filter=null) : array
 			{
 				return ['sentinel' => [$pattern, $app, $start, $num_rows, $return_all, $order, $min_relevance]];
 			}
@@ -81,16 +84,13 @@ class EmbeddingHybridSearchTest extends Api\LoggedInTest
 		$clientProp->setAccessible(true);
 		$clientProp->setValue($stub, null);
 
-		// pass a non-default min_relevance to prove the finding below
+		// a non-default min_relevance, to prove it is forwarded
 		$result = $stub->search('pattern', 'addressbook', 5, 10, true, 'modified', .4, 0.9);
 
-		// search()'s no-client fallback only forwards ($pattern,$app,$start,$num_rows,
-		// $return_all,$order) to searchFulltext() - a caller-supplied $min_relevance is
-		// silently DROPPED whenever no RAG client is configured, falling back to
-		// searchFulltext()'s own hardcoded default (0.05) instead of the 0.9 passed above.
-		// Real, if minor, inconsistency - documented here, not changed.
+		// search()'s no-client fallback used to drop a caller-supplied $min_relevance, falling back to
+		// searchFulltext()'s own default (0.05) - it is forwarded now, like $app_ids and $app_filter
 		$this->assertSame(
-			['pattern', 'addressbook', 5, 10, true, 'modified', 0.05],
+			['pattern', 'addressbook', 5, 10, true, 'modified', 0.9],
 			$result['sentinel'],
 			'search() must delegate directly to searchFulltext() with all args when no client is configured');
 	}
