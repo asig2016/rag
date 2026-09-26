@@ -1360,7 +1360,7 @@ class Embedding
 	 * @param \Throwable $e
 	 * @return bool
 	 */
-	protected static function isTimeout(\Throwable $e) : bool
+	public static function isTimeout(\Throwable $e) : bool
 	{
 		// 1969 is the abort itself; a query that follows it on the same connection can surface as 188
 		// ("Operation was interrupted"). We only ever ask this when WE set a limit on a scoped search,

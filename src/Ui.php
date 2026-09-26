@@ -119,6 +119,17 @@ class Ui
 			return 0;
 		}
 		catch (\Exception $e) {
+			// our own time limit: say so instead of a statement and stack trace, and answer the list,
+			// which also ends its "Searching ..." spinner
+			if (Embedding::isTimeout($e))
+			{
+				Api\Json\Response::get()->message(lang('The search took longer than %1 seconds and was stopped. Admin > RAG > Diagnostics shows if the vector index is used.',
+					Api\Config::read('rag')['search_timeout'] ?? 10), 'error');
+				return 0;
+			}
+			// everything else as before, with all its details - the exception handler answers with the
+			// same response, so the spinner is stopped by this call queued ahead of it
+			Api\Json\Response::get()->call('app.rag.searchFailed');
 			_egw_log_exception($e);
 			throw $e;
 		}

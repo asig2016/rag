@@ -126,6 +126,7 @@ the answering document is not first - check the model	rag	de	das antwortende Dok
 the nearest chunk is further away, so the semantic side returns nothing	rag	de	der nächste Chunk liegt weiter weg, die semantische Seite liefert daher nichts
 the related texts are closer - the model works	rag	de	die verwandten Texte liegen näher beieinander - das Modell funktioniert
 the schema stores vector(1024), other models need a schema change	rag	de	das Schema speichert vector(1024), andere Modelle brauchen eine Schema-Änderung
+the search took longer than %1 seconds and was stopped. admin > rag > diagnostics shows if the vector index is used.	rag	de	Die Suche dauerte länger als %1 Sekunden und wurde abgebrochen. Admin > RAG > Diagnose zeigt, ob der Vektor-Index benutzt wird.
 the unrelated text is closer - check the model	rag	de	der nicht verwandte Text liegt näher - das Modell prüfen
 the wildcard, indicating zero or more characters. it can only appear at the end of a word.	rag	de	Der Platzhalter, der null oder mehr Zeichen angibt. Er kann nur am Ende eines Wortes stehen
 the word cannot appear in any row returned.	rag	de	Das Wort darf in keiner Zeile der Rückgabe vorkommen

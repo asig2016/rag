@@ -110,6 +110,16 @@ class RagApp extends EgwApp
 	 * Removes the spinner of the running search, see showSearching()
 	 */
 	protected searchDone : () => void = null;
+
+	/**
+	 * The search failed server-side: the list never gets its rows, so end the spinner here
+	 *
+	 * Called from Ui::get_rows() ahead of the error it passes on.
+	 */
+	searchFailed()
+	{
+		this.searchDone?.();
+	}
 }
 
 app.classes.rag = RagApp;

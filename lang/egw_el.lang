@@ -22,6 +22,7 @@ rag search only	rag	el	Μόνο αναζήτηση RAG
 search in which applications	rag	el	Αναζήτηση σε ποιες εφαρμογές
 searching ...	rag	el	Αναζήτηση σε εξέλιξη ...
 should search in apps be ordered by relevance	rag	el	Η αναζήτηση στις εφαρμογές πρέπει να ταξινομείται κατά συνάφεια
+the search took longer than %1 seconds and was stopped. admin > rag > diagnostics shows if the vector index is used.	rag	el	Η αναζήτηση διήρκεσε περισσότερο από %1 δευτερόλεπτα και διακόπηκε. Το Admin > RAG > Διαγνωστικά δείχνει αν χρησιμοποιείται το ευρετήριο διανυσμάτων.
 the wildcard, indicating zero or more characters. it can only appear at the end of a word.	rag	el	Ο χαρακτήρας μπαλαντέρ, που υποδηλώνει μηδέν ή περισσότερους χαρακτήρες. Μπορεί να εμφανίζεται μόνο στο τέλος μιας λέξης
 the word cannot appear in any row returned.	rag	el	Η λέξη δεν μπορεί να εμφανίζεται σε καμία σειρά που επιστρέφεται
 the word following contributes negatively to the relevance of the row.	rag	el	Η λέξη που ακολουθεί συμβάλλει αρνητικά στη συνάφεια της σειράς

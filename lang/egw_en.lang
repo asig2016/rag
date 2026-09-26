@@ -126,6 +126,7 @@ the answering document is not first - check the model	rag	en	the answering docum
 the nearest chunk is further away, so the semantic side returns nothing	rag	en	the nearest chunk is further away, so the semantic side returns nothing
 the related texts are closer - the model works	rag	en	the related texts are closer - the model works
 the schema stores vector(1024), other models need a schema change	rag	en	the schema stores vector(1024), other models need a schema change
+the search took longer than %1 seconds and was stopped. admin > rag > diagnostics shows if the vector index is used.	rag	en	The search took longer than %1 seconds and was stopped. Admin > RAG > Diagnostics shows if the vector index is used.
 the unrelated text is closer - check the model	rag	en	the unrelated text is closer - check the model
 the wildcard, indicating zero or more characters. it can only appear at the end of a word.	rag	en	The wildcard, indicating zero or more characters. It can only appear at the end of a word
 the word cannot appear in any row returned.	rag	en	The word cannot appear in any row returned
