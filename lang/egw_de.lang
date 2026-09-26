@@ -1,10 +1,12 @@
 %1 characters accepted	rag	de	%1 Zeichen akzeptiert
+%1 chunks	rag	de	%1 Abschnitte
 %1 of %2 embeddings returned	rag	de	%1 von %2 Embeddings zurückgegeben
 0 = identical, 2 = opposite meaning, default 0.4	rag	de	0 = identisch, 2 = gegenteilige Bedeutung, Vorgabe 0,4
 a real search sends documents of %1 characters	rag	de	eine echte Suche sendet Dokumente mit %1 Zeichen
 a reranker needs a cross-encoder endpoint: llama.cpp --reranking, vllm, jina or huggingface tei.	rag	de	Ein Reranker braucht einen Cross-Encoder-Endpunkt: llama.cpp --reranking, vLLM, Jina oder HuggingFace TEI.
 all supported	rag	de	Alle unterstützten
 always use relevance	rag	de	Immer Relevanz verwenden
+and permanently in the mariadb server configuration, e.g. %1, then restart mariadb	rag	de	und dauerhaft in der MariaDB Server-Konfiguration, z.B. %1, danach MariaDB neu starten
 anything enclosed in the double quotes is taken as a whole (so you can match phrases, for example).	rag	de	Alles, was in doppelten Anführungszeichen steht, wird als Ganzes betrachtet (so können Sie beispielsweise Phrasen abgleichen)
 api key	rag	de	API Key
 api of the rerank endpoint	rag	de	API des Rerank-Endpunkts
@@ -18,6 +20,7 @@ async job settings (cron schedule): leave empty to use defaults.	rag	de	Einstell
 both indexes	rag	de	Beide Indizes
 cached search patterns	rag	de	Zwischengespeicherte Suchmuster
 change fulltext search pattern to match words starting with pattern	rag	de	Ändere das Suchmuster der Volltextsuche um auch Worte zu finden die damit beginnen
+check the server has %1 gb of memory to spare, on top of the innodb buffer pool.	rag	de	Prüfen, ob der Server %1 GB Speicher übrig hat, zusätzlich zum InnoDB Buffer-Pool.
 checks	rag	de	Prüfungen
 chunk overlap	rag	de	Chunk Überlappung
 chunk size	rag	de	Größe der Chunks
@@ -51,10 +54,12 @@ how many matches to rerank	rag	de	Wie viele Treffer nachsortieren
 hybrid search (rag+fulltext)	rag	de	Hybride Suche (RAG+Volltext)
 hybrid search: rag+fulltext	rag	de	Hybride Suche: RAG + Volltext
 identical	rag	de	identisch
+if set global is refused, use only the configuration and the restart.	rag	de	Wird SET GLOBAL abgelehnt, nur die Konfiguration und den Neustart verwenden.
 in characters, incl. the context prefixed to every chunk. changing it re-embeds everything!	rag	de	In Zeichen, inkl. des jedem Chunk vorangestellten Kontexts. Eine Änderung berechnet alle Embeddings neu!
 index now	rag	de	Jetzt indizieren
 index status	rag	de	Index-Status
 indexes for up to 30 seconds, so an installation can be tested without waiting for the async job.	rag	de	Indiziert bis zu 30 Sekunden, damit eine Installation getestet werden kann, ohne auf den asynchronen Job zu warten.
+innodb buffer pool	rag	de	InnoDB Buffer-Pool
 installed	rag	de	installiert
 last errors of rag's async job	rag	de	Letzte Fehler des asynchronen Jobs des RAG's
 leave empty to disable rag	rag	de	Leer lassen um das RAG auszuschalten
@@ -83,6 +88,7 @@ no, use search-order chosen in app	rag	de	Nein, verwende die Sortierung die in d
 none - nothing is embedded for this application yet	rag	de	keine - für diese Anwendung ist noch nichts eingebettet
 not configured	rag	de	nicht konfiguriert
 not cosine - the k-nn query can not use the index	rag	de	nicht cosine - die k-NN-Abfrage kann den Index nicht nutzen
+not enough memory? a partly filled cache still helps. or embed less: fewer applications for rag, or only newer entries.	rag	de	Nicht genug Speicher? Ein teilweise gefüllter Cache hilft auch. Oder weniger einbetten: weniger Anwendungen für RAG, oder nur neuere Einträge.
 not installed	rag	de	nicht installiert
 not offered by the endpoint	rag	de	wird vom Endpunkt nicht angeboten
 not offered by the endpoint - a rerank endpoint does not have to list it though	rag	de	wird vom Endpunkt nicht angeboten - ein Rerank-Endpunkt muss es allerdings nicht auflisten
@@ -98,6 +104,7 @@ rag	common	de	RAG
 rag / semantic search	rag	de	RAG / Semantische Suche
 rag search	rag	de	RAG Suche
 rag search only	rag	de	RAG Suche ausschließlich
+raise the cache now, as a database administrator	rag	de	Den Cache jetzt erhöhen, als Datenbank-Administrator
 ran %1 seconds	rag	de	lief %1 Sekunden
 relevance	rag	de	Relevanz
 rerank endpoint %1 is not usable: %2	rag	de	Rerank-Endpunkt %1 ist nicht nutzbar: %2
@@ -109,6 +116,7 @@ run all checks	rag	de	Alle Prüfungen ausführen
 run it again to index the next batch, or save the configuration to let the async job do it.	rag	de	Erneut ausführen für den nächsten Stapel, oder die Konfiguration speichern, damit der asynchrone Job das übernimmt.
 run search	rag	de	Suche ausführen
 run the rerank check to see why	rag	de	Die Rerank-Prüfung ausführen, um zu sehen warum
+run the same rag search twice: the first one loads the index into the cache and can still be slow, the second should answer within a second.	rag	de	Dieselbe RAG-Suche zweimal ausführen: die erste lädt den Index in den Cache und kann noch langsam sein, die zweite sollte in unter einer Sekunde antworten.
 save the configuration to install it - without it no index is ever updated	rag	de	Die Konfiguration speichern, um ihn zu installieren - ohne ihn wird kein Index je aktualisiert
 score	rag	de	Score
 scores	rag	de	Scores
@@ -117,6 +125,9 @@ search in which applications	rag	de	In welchen Anwendungen suchen
 searching ...	rag	de	Suche läuft ...
 semantics	rag	de	Semantik
 shown	rag	de	angezeigt
+size of the vector index	rag	de	Größe des Vektor-Index
+smaller than %1 with its indexes (%2): what is not in the vector index cache is read from disk.	rag	de	Kleiner als %1 mit seinen Indizes (%2): was nicht im Cache des Vektor-Index ist, wird von der Platte gelesen.
+smaller than the index: searches read it from the buffer pool or disk and can run into the search timeout.	rag	de	Kleiner als der Index: Suchen lesen ihn aus dem Buffer-Pool oder von der Platte und können in das Such-Timeout laufen.
 start it with e.g. -ub 2048 -b 2048 -c 8192.	rag	de	Starten Sie es z.B. mit -ub 2048 -b 2048 -c 8192.
 stop calculating embeddings after this time (in seconds). default: 285 (4min:45sec)	rag	de	Beende die Berechnung von Embeddings nach dieser Zeit (in Sekunden). Vorgabe (4min:45sec)
 should search in apps be ordered by relevance	rag	de	Soll die Suche in den Anwendungen nach Relevanz sortiert sein
@@ -142,7 +153,9 @@ url of the rerank endpoint	rag	de	URL des Rerank-Endpunkts
 use operators:	rag	de	Operatoren verwenden:
 used to group words into subexpressions.	rag	de	Wird verwendet, um Wörter zu Unterausdrücken zu gruppieren
 vector index	rag	de	Vektor-Index
+vector index cache	rag	de	Cache des Vektor-Index
 weekday 0-6, 0=sun	rag	de	Wochentag 0-6, 0=Sonntag
+what to do	rag	de	Was tun
 what type of search to use for search in %1	rag	de	Welche Art der Suche soll zum Suchen in der Anwendung %1 verwendet werden
 what type of search to use for search in adressbuch	rag	de	Welche Art der Suche soll zum Suchen im Adressbuch verwendet werden
 what type of search to use for search in the apps	rag	de	Welche Art der Suche soll zum Suchen in den Anwendungen verwendet werden

@@ -217,6 +217,7 @@ class Diagnostics
 			$cosine = (bool)preg_match('/VECTOR KEY.*DISTANCE\s*=\s*cosine/is', $create);
 			$lines[] = self::line(lang('Vector index'), $cosine ? 'DISTANCE=cosine' :
 				lang('not cosine - the k-NN query can not use the index'), $cosine ? 'ok' : 'fail');
+			$lines = array_merge($lines, $this->checkIndexMemory($db));
 		}
 		catch (\Throwable $e) {
 			$lines[] = self::line(Embedding::TABLE, $e->getMessage(), 'fail');
@@ -233,6 +234,60 @@ class Diagnostics
 			$lines[] = self::line(lang('Async Job'), lang('not installed'), 'fail',
 				lang('Save the configuration to install it - without it no index is ever updated'));
 		}
+		return $lines;
+	}
+
+	/**
+	 * Does the vector index fit into the memory the search reads it from?
+	 *
+	 * The k-NN search walks the index graph through MariaDB's own cache (mhnsw_max_cache_size, 16 MB
+	 * by default), missing nodes come from the InnoDB buffer pool, and what is not there from disk.
+	 * With an index much bigger than both, a search reads most of it from disk and runs into the
+	 * search timeout - seen with 800k chunks (about 6 GB of index) on a 16 MB cache.
+	 *
+	 * The index size is index_length of the table, which includes the hidden vector index table and
+	 * needs no privilege beyond reading information_schema.
+	 *
+	 * @param Api\Db $db
+	 * @return string[]
+	 */
+	protected function checkIndexMemory(Api\Db $db) : array
+	{
+		$row = $db->query('SELECT data_length, index_length, table_rows FROM information_schema.tables'.
+			' WHERE table_schema=DATABASE() AND table_name='.$db->quote(Embedding::TABLE))->fetch();
+		if (!$row) return [];
+		$index = (int)$row['index_length'];
+		$table = $index + (int)$row['data_length'];
+		$mb = static fn(int $bytes) => number_format($bytes / 1048576, 0, '', '.').' MB';
+
+		$lines = [self::line(lang('Size of the vector index'), $mb($index).', '.
+			lang('%1 chunks', number_format((int)$db->query('SELECT COUNT(*) FROM '.Embedding::TABLE)->fetchColumn(), 0, '', '.')))];
+
+		$cache = (int)$db->query('SELECT @@GLOBAL.mhnsw_max_cache_size')->fetchColumn();
+		$lines[] = self::line(lang('Vector index cache').' (mhnsw_max_cache_size)', $mb($cache),
+			$cache >= $index ? 'ok' : 'warn', $cache >= $index ? null :
+				lang('Smaller than the index: searches read it from the buffer pool or disk and can run into the search timeout.'));
+		if ($cache < $index)
+		{
+			// the index plus a quarter for its growth, in whole GB
+			$gb = max(1, (int)ceil($index * 1.25 / 1073741824));
+			$indent = str_repeat(' ', 7);
+			array_push($lines,
+				$indent.lang('What to do').':',
+				$indent.'1. '.lang('Check the server has %1 GB of memory to spare, on top of the InnoDB buffer pool.', $gb),
+				$indent.'2. '.lang('Raise the cache now, as a database administrator').': SET GLOBAL mhnsw_max_cache_size = '.($gb * 1073741824).';',
+				$indent.'   '.lang('and permanently in the MariaDB server configuration, e.g. %1, then restart MariaDB',
+					'/etc/mysql/mariadb.conf.d/50-server.cnf').': [mariadb] mhnsw_max_cache_size = '.$gb.'G',
+				$indent.'   '.lang('If SET GLOBAL is refused, use only the configuration and the restart.'),
+				$indent.'3. '.lang('Run the same RAG search twice: the first one loads the index into the cache and can still be slow, the second should answer within a second.'),
+				$indent.lang('Not enough memory? A partly filled cache still helps. Or embed less: fewer applications for RAG, or only newer entries.'));
+		}
+
+		$pool = (int)$db->query('SELECT @@GLOBAL.innodb_buffer_pool_size')->fetchColumn();
+		$lines[] = self::line(lang('InnoDB buffer pool').' (innodb_buffer_pool_size)', $mb($pool),
+			$pool >= $table ? 'ok' : 'warn', $pool >= $table ? null :
+				lang('Smaller than %1 with its indexes (%2): what is not in the vector index cache is read from disk.',
+					Embedding::TABLE, $mb($table)));
 		return $lines;
 	}
 

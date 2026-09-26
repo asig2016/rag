@@ -1,8 +1,11 @@
+%1 chunks	rag	el	%1 τμήματα
 always use relevance	rag	el	Πάντα χρήση σχετικότητας
+and permanently in the mariadb server configuration, e.g. %1, then restart mariadb	rag	el	και μόνιμα στη διαμόρφωση του διακομιστή MariaDB, π.χ. %1, και μετά επανεκκίνηση της MariaDB
 anything enclosed in the double quotes is taken as a whole (so you can match phrases, for example).	rag	el	Οτιδήποτε περικλείεται σε διπλά εισαγωγικά θεωρείται ως σύνολο (έτσι μπορείτε να αντιστοιχίσετε φράσεις, για παράδειγμα)
 app	rag	el	Εφαρμογή
 app id	rag	el	Αναγνωριστικό εφαρμογής
 change fulltext search pattern to match words starting with pattern	rag	el	Αλλαγή του μοτίβου αναζήτησης πλήρους κειμένου για να ταιριάζει με λέξεις που ξεκινούν με το μοτίβο
+check the server has %1 gb of memory to spare, on top of the innodb buffer pool.	rag	el	Ελέγξτε ότι ο διακομιστής έχει %1 GB ελεύθερης μνήμης, επιπλέον του InnoDB buffer pool.
 currently only embedding models with 1024 dimensions, like bge-m3 are supported!	rag	el	Προς το παρόν υποστηρίζονται μόνο μοντέλα ενσωμάτωσης με 1024 διαστάσεις, όπως το bge-m3!
 default sorting	rag	el	Προεπιλεγμένη ταξινόμηση
 enter your search query here...	rag	el	Εισάγετε εδώ την ερώτησή σας...
@@ -10,18 +13,26 @@ fulltext	rag	el	Πλήρες κείμενο
 fulltext search	rag	el	Αναζήτηση πλήρους κειμένου
 hybrid search (rag+fulltext)	rag	el	Υβριδική αναζήτηση (RAG + Πλήρες κείμενο)
 hybrid search: rag+fulltext	rag	el	Υβριδική αναζήτηση: RAG + Πλήρες κείμενο
+if set global is refused, use only the configuration and the restart.	rag	el	Αν το SET GLOBAL απορριφθεί, χρησιμοποιήστε μόνο τη διαμόρφωση και την επανεκκίνηση.
+innodb buffer pool	rag	el	InnoDB buffer pool
 legacy search	rag	el	Παλαιά αναζήτηση
 legacy search, as used before	rag	el	Παλαιά αναζήτηση, όπως χρησιμοποιούνταν προηγουμένως
 no, use search-order chosen in app	rag	el	Όχι, χρήση της σειράς αναζήτησης που έχει επιλεγεί στην εφαρμογή
+not enough memory? a partly filled cache still helps. or embed less: fewer applications for rag, or only newer entries.	rag	el	Δεν υπάρχει αρκετή μνήμη; Ένα μερικώς γεμάτο cache βοηθά επίσης. Ή λιγότερα embeddings: λιγότερες εφαρμογές για RAG, ή μόνο νεότερες εγγραφές.
 operators	rag	el	Λειτουργίες
 query	rag	el	Ερώτηση
 rag	common	el	RAG
 rag / semantic search	rag	el	RAG / Σημασιολογική αναζήτηση
 rag search	rag	el	Αναζήτηση RAG
 rag search only	rag	el	Μόνο αναζήτηση RAG
+raise the cache now, as a database administrator	rag	el	Αυξήστε το cache τώρα, ως διαχειριστής της βάσης δεδομένων
+run the same rag search twice: the first one loads the index into the cache and can still be slow, the second should answer within a second.	rag	el	Εκτελέστε την ίδια αναζήτηση RAG δύο φορές: η πρώτη φορτώνει το ευρετήριο στο cache και μπορεί να είναι ακόμη αργή, η δεύτερη θα πρέπει να απαντήσει σε λιγότερο από ένα δευτερόλεπτο.
 search in which applications	rag	el	Αναζήτηση σε ποιες εφαρμογές
 searching ...	rag	el	Αναζήτηση σε εξέλιξη ...
 should search in apps be ordered by relevance	rag	el	Η αναζήτηση στις εφαρμογές πρέπει να ταξινομείται κατά συνάφεια
+size of the vector index	rag	el	Μέγεθος του ευρετηρίου διανυσμάτων
+smaller than %1 with its indexes (%2): what is not in the vector index cache is read from disk.	rag	el	Μικρότερο από τον %1 με τα ευρετήριά του (%2): ό,τι δεν βρίσκεται στο cache του ευρετηρίου διανυσμάτων διαβάζεται από τον δίσκο.
+smaller than the index: searches read it from the buffer pool or disk and can run into the search timeout.	rag	el	Μικρότερο από το ευρετήριο: οι αναζητήσεις το διαβάζουν από το buffer pool ή τον δίσκο και μπορεί να ξεπεράσουν το χρονικό όριο αναζήτησης.
 the search took longer than %1 seconds and was stopped. admin > rag > diagnostics shows if the vector index is used.	rag	el	Η αναζήτηση διήρκεσε περισσότερο από %1 δευτερόλεπτα και διακόπηκε. Το Admin > RAG > Διαγνωστικά δείχνει αν χρησιμοποιείται το ευρετήριο διανυσμάτων.
 the wildcard, indicating zero or more characters. it can only appear at the end of a word.	rag	el	Ο χαρακτήρας μπαλαντέρ, που υποδηλώνει μηδέν ή περισσότερους χαρακτήρες. Μπορεί να εμφανίζεται μόνο στο τέλος μιας λέξης
 the word cannot appear in any row returned.	rag	el	Η λέξη δεν μπορεί να εμφανίζεται σε καμία σειρά που επιστρέφεται
@@ -32,4 +43,6 @@ the word that follows has a lower relevance than other words, although rows cont
 type of search	rag	el	Τύπος αναζήτησης
 use operators:	rag	el	Χρήση τελεστών:
 used to group words into subexpressions.	rag	el	Χρησιμοποιείται για την ομαδοποίηση λέξεων σε υποεκφράσεις
+vector index cache	rag	el	Cache του ευρετηρίου διανυσμάτων
+what to do	rag	el	Τι να κάνετε
 what type of search to use for search in the apps	rag	el	Τι τύπος αναζήτησης να χρησιμοποιηθεί για την αναζήτηση στις εφαρμογές

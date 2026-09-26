@@ -1,10 +1,12 @@
 %1 characters accepted	rag	en	%1 characters accepted
+%1 chunks	rag	en	%1 chunks
 %1 of %2 embeddings returned	rag	en	%1 of %2 embeddings returned
 0 = identical, 2 = opposite meaning, default 0.4	rag	en	0 = identical, 2 = opposite meaning, default 0.4
 a real search sends documents of %1 characters	rag	en	a real search sends documents of %1 characters
 a reranker needs a cross-encoder endpoint: llama.cpp --reranking, vllm, jina or huggingface tei.	rag	en	A reranker needs a cross-encoder endpoint: llama.cpp --reranking, vLLM, Jina or HuggingFace TEI.
 all supported	rag	en	All supported
 always use relevance	rag	en	Always use relevance
+and permanently in the mariadb server configuration, e.g. %1, then restart mariadb	rag	en	and permanently in the MariaDB server configuration, e.g. %1, then restart MariaDB
 anything enclosed in the double quotes is taken as a whole (so you can match phrases, for example).	rag	en	Anything enclosed in the double quotes is taken as a whole (so you can match phrases, for example)
 api key	rag	en	API Key
 api of the rerank endpoint	rag	en	API of the rerank endpoint
@@ -18,6 +20,7 @@ async job settings (cron schedule): leave empty to use defaults.	rag	en	Async Jo
 both indexes	rag	en	Both indexes
 cached search patterns	rag	en	Cached search patterns
 change fulltext search pattern to match words starting with pattern	rag	en	Change fulltext search pattern to match words starting with pattern
+check the server has %1 gb of memory to spare, on top of the innodb buffer pool.	rag	en	Check the server has %1 GB of memory to spare, on top of the InnoDB buffer pool.
 checks	rag	en	Checks
 chunk overlap	rag	en	Chunk overlap
 chunk size	rag	en	Chunk size
@@ -51,10 +54,12 @@ how many matches to rerank	rag	en	How many matches to rerank
 hybrid search (rag+fulltext)	rag	en	Hybrid search (RAG + Fulltext)
 hybrid search: rag+fulltext	rag	en	Hybrid search: RAG+Fulltext
 identical	rag	en	identical
+if set global is refused, use only the configuration and the restart.	rag	en	If SET GLOBAL is refused, use only the configuration and the restart.
 in characters, incl. the context prefixed to every chunk. changing it re-embeds everything!	rag	en	In characters, incl. the context prefixed to every chunk. Changing it re-embeds everything!
 index now	rag	en	Index now
 index status	rag	en	Index status
 indexes for up to 30 seconds, so an installation can be tested without waiting for the async job.	rag	en	Indexes for up to 30 seconds, so an installation can be tested without waiting for the async job.
+innodb buffer pool	rag	en	InnoDB buffer pool
 installed	rag	en	installed
 last errors of rag's async job	rag	en	Last errors of RAG's async job
 leave empty to disable rag	rag	en	leave empty to disable RAG
@@ -83,6 +88,7 @@ no, use search-order chosen in app	rag	en	No, use search-order chosen in app
 none - nothing is embedded for this application yet	rag	en	none - nothing is embedded for this application yet
 not configured	rag	en	not configured
 not cosine - the k-nn query can not use the index	rag	en	not cosine - the k-NN query can not use the index
+not enough memory? a partly filled cache still helps. or embed less: fewer applications for rag, or only newer entries.	rag	en	Not enough memory? A partly filled cache still helps. Or embed less: fewer applications for RAG, or only newer entries.
 not installed	rag	en	not installed
 not offered by the endpoint	rag	en	not offered by the endpoint
 not offered by the endpoint - a rerank endpoint does not have to list it though	rag	en	not offered by the endpoint - a rerank endpoint does not have to list it though
@@ -98,6 +104,7 @@ rag	common	en	RAG
 rag / semantic search	rag	en	RAG / Semantic search
 rag search	rag	en	RAG Search
 rag search only	rag	en	RAG search only
+raise the cache now, as a database administrator	rag	en	Raise the cache now, as a database administrator
 ran %1 seconds	rag	en	ran %1 seconds
 relevance	rag	en	Relevance
 rerank endpoint %1 is not usable: %2	rag	en	Rerank endpoint %1 is not usable: %2
@@ -109,6 +116,7 @@ run all checks	rag	en	Run all checks
 run it again to index the next batch, or save the configuration to let the async job do it.	rag	en	Run it again to index the next batch, or save the configuration to let the async job do it.
 run search	rag	en	Run search
 run the rerank check to see why	rag	en	Run the rerank check to see why
+run the same rag search twice: the first one loads the index into the cache and can still be slow, the second should answer within a second.	rag	en	Run the same RAG search twice: the first one loads the index into the cache and can still be slow, the second should answer within a second.
 save the configuration to install it - without it no index is ever updated	rag	en	Save the configuration to install it - without it no index is ever updated
 score	rag	en	Score
 scores	rag	en	scores
@@ -118,6 +126,9 @@ searching ...	rag	en	Searching ...
 semantics	rag	en	Semantics
 should search in apps be ordered by relevance	rag	en	Should search in apps be ordered by relevance
 shown	rag	en	shown
+size of the vector index	rag	en	Size of the vector index
+smaller than %1 with its indexes (%2): what is not in the vector index cache is read from disk.	rag	en	Smaller than %1 with its indexes (%2): what is not in the vector index cache is read from disk.
+smaller than the index: searches read it from the buffer pool or disk and can run into the search timeout.	rag	en	Smaller than the index: searches read it from the buffer pool or disk and can run into the search timeout.
 start it with e.g. -ub 2048 -b 2048 -c 8192.	rag	en	Start it with e.g. -ub 2048 -b 2048 -c 8192.
 stop calculating embeddings after this time (in seconds). default: 285 (4min:45sec)	rag	en	Stop calculating embeddings after this time (in seconds). Default: 285 (4min:45sec)
 syntax error in fulltext search-pattern	common	en	Syntax error in fulltext search-pattern
@@ -142,7 +153,9 @@ url of the rerank endpoint	rag	en	URL of the rerank endpoint
 use operators:	rag	en	Use operators:
 used to group words into subexpressions.	rag	en	Used to group words into subexpressions
 vector index	rag	en	Vector index
+vector index cache	rag	en	Vector index cache
 weekday 0-6, 0=sun	rag	en	Weekday 0-6, 0=Sun
+what to do	rag	en	What to do
 what type of search to use for search in %1	rag	en	What type of search to use for search in %1
 what type of search to use for search in adressbuch	rag	en	What type of search to use for search in Adressbuch
 what type of search to use for search in the apps	rag	en	What type of search to use for search in the apps
