@@ -193,7 +193,7 @@ class Embedding
 			$factory = Openai::factory();
 			if (self::$url) $factory->withBaseUri(self::$url);
 			if (self::$api_key) $factory->withApiKey(self::$api_key);
-			$this->client = $factory->make();
+			$this->client = $this->configured_client = $factory->make();
 		}
 		$this->db = $GLOBALS['egw']->db;
 		self::$log_level = $log_level;
@@ -221,6 +221,11 @@ class Embedding
 		}
 		return $this->time_limited_client[(string)$timeout];
 	}
+
+	/**
+	 * The client the constructor built from the configuration, see create()
+	 */
+	protected ?\OpenAI\Client $configured_client = null;
 
 	/**
 	 * @var \OpenAI\Client[] timeout => client, see timeLimitedClient()
@@ -550,7 +555,9 @@ class Embedding
 	 */
 	public function create(array $chunks, ?float $timeout=null) : array
 	{
-		$client = $timeout > 0 ? $this->timeLimitedClient($timeout) : $this->client;
+		// only instead of the client built from the configuration: a client set otherwise (eg. by a test) is used as is
+		$client = $timeout > 0 && isset($this->configured_client) && $this->client === $this->configured_client ?
+			$this->timeLimitedClient($timeout) : $this->client;
 		if (!$chunks) return [];    // otherwise we start a query for rag_hash IS NULL
 		$responses = [];
 		foreach($chunks as $n => $chunk)
@@ -660,7 +667,7 @@ class Embedding
 			}
 		}
 		$db->query('ALTER TABLE '.self::TABLE.' '.implode(', ', $drop).($drop ? ', ' : '').
-			'ADD VECTOR INDEX egw_rag_embedding ('.self::EMBEDDING.') M=16 DISTANCE=cosine', __LINE__, __FILE__);
+			'ADD VECTOR INDEX '.self::VECTOR_INDEX.' ('.self::EMBEDDING.') M=16 DISTANCE=cosine', __LINE__, __FILE__);
 	}
 
 	/**
@@ -1378,11 +1385,159 @@ class Embedding
 	 * @param string $sql
 	 * @return string
 	 */
-	protected static function timeLimited(string $sql) : string
+	protected static function timeLimited(string $sql, ?float $timeout=null) : string
 	{
+		$timeout = isset($timeout) && self::$search_timeout > 0 ? min($timeout, self::$search_timeout) : ($timeout ?? self::$search_timeout);
 		// %F, not a plain cast: a small float would render as 1.0E-6, which is not what we mean to send
-		return self::$search_timeout > 0 ?
-			'SET STATEMENT max_statement_time='.sprintf('%.3F', self::$search_timeout).' FOR '.$sql : $sql;
+		return $timeout > 0 ?
+			'SET STATEMENT max_statement_time='.sprintf('%.3F', $timeout).' FOR '.$sql : $sql;
+	}
+
+	/**
+	 * Up to how many chunks the filtered chunks are searched exactly, instead of filtering the nearest ones
+	 *
+	 * An exact search costs per chunk: 2µs with the rows in memory, 100µs read from disk (82s for 813k).
+	 */
+	protected static int $exact_max_chunks = 20000;
+
+	/**
+	 * Plan the last searchEmbeddings() used: "none", "exact" or "post", see there
+	 */
+	public ?string $plan = null;
+
+	/**
+	 * Seconds the exact search may take, before the nearest chunks are filtered instead
+	 */
+	const EXACT_TIMEOUT = 2.0;
+
+	/**
+	 * Seconds counting the filtered chunks may take, before they are taken as many
+	 */
+	const COUNT_TIMEOUT = 1.0;
+
+	/**
+	 * The k nearest chunks, grouped to their entries, for one of the plans of searchEmbeddings()
+	 *
+	 * MariaDB only uses the vector index for exactly this shape: ORDER BY the distance function (with the distance the
+	 * index was built with) ASC plus a LIMIT, therefore the entry level grouping, the max. distance and the requested
+	 * order are applied outside.
+	 *
+	 * @param string $plan "none", "exact" or "post"
+	 * @param string $embedding quoted vector of the query
+	 * @param int $k nearest chunks needed
+	 * @param string[] $where conditions on the app and ids
+	 * @param ?string $app_filter sub-query of the app's own filters
+	 * @param ?int $chunks number of chunks the filters leave, null if not known
+	 * @param float $max_distance
+	 * @return string SQL
+	 */
+	protected function knnEntries(string $plan, string $embedding, int $k, array $where, ?string $app_filter, ?int $chunks, float $max_distance) : string
+	{
+		$distance = 'VEC_DISTANCE_COSINE('.self::EMBEDDING.', '.$embedding.') AS distance';
+		$cols = self::EMBEDDING_APP.','.self::EMBEDDING_APP_ID.','.self::EMBEDDING_MODIFIED;
+		$outer = [];
+		switch($plan)
+		{
+			case 'exact':
+				// the normal indexes find the filtered chunks, the distance is calculated for each of them
+				$knn = 'SELECT '.$cols.','.$distance.' FROM '.self::TABLE.' IGNORE INDEX ('.self::VECTOR_INDEX.')'.
+					self::appFilterJoin($app_filter, self::TABLE.'.'.self::EMBEDDING_APP_ID).
+					($where ? ' WHERE '.implode(' AND ', $where) : '').' ORDER BY distance LIMIT '.$k;
+				$from = '('.$knn.') knn';
+				break;
+
+			case 'post':
+				// as many more candidates as the filters leave out, eg. twice as many for half the chunks
+				$total = array_sum($this->appChunks()) ?: 1;
+				$k = min(max($k, (int)ceil($k * $total / max(1, $chunks ?? intdiv($total, 10)))), self::POST_MAX_CANDIDATES);
+				$knn = 'SELECT '.$cols.','.$distance.' FROM '.self::TABLE.' ORDER BY distance LIMIT '.$k;
+				$from = '('.$knn.') knn'.self::appFilterJoin($app_filter, 'knn.'.self::EMBEDDING_APP_ID);
+				$outer = $where;
+				break;
+
+			default:    // "none"
+				$from = '(SELECT '.$cols.','.$distance.' FROM '.self::TABLE.' ORDER BY distance LIMIT '.$k.') knn';
+				break;
+		}
+		// best chunk per entry, so every entry counts once for LIMIT and total
+		return 'SELECT knn.'.self::EMBEDDING_APP.',knn.'.self::EMBEDDING_APP_ID.',MIN(distance) AS distance,MAX(knn.'.self::EMBEDDING_MODIFIED.') AS modified'.
+			' FROM '.$from.' WHERE distance < '.$max_distance.($outer ? ' AND '.implode(' AND ', $outer) : '').
+			' GROUP BY knn.'.self::EMBEDDING_APP.',knn.'.self::EMBEDDING_APP_ID;
+	}
+
+	/**
+	 * Name of the vector index, see createVectorIndex()
+	 */
+	const VECTOR_INDEX = 'egw_rag_embedding';
+
+	/**
+	 * Most candidates the "post" plan takes from the vector index, which gets slower with more
+	 */
+	const POST_MAX_CANDIDATES = 10000;
+
+	/**
+	 * How many chunks do the filters of a search leave?
+	 *
+	 * The app alone comes from the cached counts per app, ids and the app's own filters are counted -
+	 * under a short limit, a filter too slow to count is taken as leaving many.
+	 *
+	 * @param string[] $where conditions on the app and ids
+	 * @param string|string[]|null $app
+	 * @param ?int[] $app_ids
+	 * @param ?string $app_filter
+	 * @return ?int null: not known
+	 */
+	protected function filteredChunks(array $where, $app, ?array $app_ids, ?string $app_filter) : ?int
+	{
+		if (!$app_ids && !$app_filter)
+		{
+			return array_sum(array_intersect_key($this->appChunks(), array_flip((array)$app)));
+		}
+		try {
+			return (int)$this->db->query(self::timeLimited('SELECT COUNT(*) FROM '.self::TABLE.
+				self::appFilterJoin($app_filter, self::TABLE.'.'.self::EMBEDDING_APP_ID).
+				($where ? ' WHERE '.implode(' AND ', $where) : ''), self::COUNT_TIMEOUT), __LINE__, __FILE__)->fetchColumn();
+		}
+		catch (\Throwable $e) {
+			if (!self::isTimeout($e)) throw $e;
+			return null;
+		}
+	}
+
+	/**
+	 * Would filtering the embeddings by $app leave anything out?
+	 *
+	 * False if the index holds no other applications than the given ones, eg. a single application
+	 * embedded and searched in: the filter then only costs time, see searchEmbeddings().
+	 *
+	 * @param string|string[] $app
+	 * @return bool
+	 */
+	protected function appNarrows($app) : bool
+	{
+		return (bool)array_diff(array_keys($this->appChunks()), (array)$app);
+	}
+
+	/**
+	 * Number of chunks per application in the index
+	 *
+	 * Counting reads the whole app index, therefore cached for an hour: the plan chosen from it only needs the
+	 * magnitude, and it only changes a lot when an application is added to or removed from the RAG.
+	 *
+	 * @return int[] app => chunks
+	 */
+	protected function appChunks() : array
+	{
+		return Api\Cache::getInstance(self::APP, 'app-chunks', function()
+		{
+			$counts = [];
+			foreach($this->db->query('SELECT '.self::EMBEDDING_APP.',COUNT(*) AS chunks FROM '.self::TABLE.
+				' GROUP BY '.self::EMBEDDING_APP, __LINE__, __FILE__) as $row)
+			{
+				$counts[$row[self::EMBEDDING_APP]] = (int)$row['chunks'];
+			}
+			return $counts;
+		}, [], 3600);
 	}
 
 	/**
@@ -1396,10 +1551,10 @@ class Embedding
 		// 1969 is the abort itself; a query that follows it on the same connection can surface as 188
 		// ("Operation was interrupted"). We only ever ask this when WE set a limit on a scoped search,
 		// so treating both as ours is safe: the fallback just repeats the search unscoped.
-		return self::$search_timeout > 0 &&
-			(in_array($e->getCode(), [1969, 188]) ||
-				stripos($e->getMessage(), 'max_statement_time exceeded') !== false ||
-				stripos($e->getMessage(), 'was interrupted') !== false);
+		// not tied to a configured search timeout: the exact plan and the count run under limits of their own
+		return in_array($e->getCode(), [1969, 188]) ||
+			stripos($e->getMessage(), 'max_statement_time exceeded') !== false ||
+			stripos($e->getMessage(), 'was interrupted') !== false;
 	}
 
 	/**
@@ -1472,25 +1627,22 @@ class Embedding
 		{
 			$this->cacheQueryEmbedding($response[0]);
 		}
+		// The filters (app, ids, the list's own filters) are never combined with the vector index: MariaDB 12.3 then
+		// checks candidate after candidate against the table - 19s, and 383s cold, instead of 0.17s unfiltered on 800k
+		// chunks. Depending on how many chunks the filters leave, one of three plans is used:
+		// - none: nothing to filter (eg. the one app everything is embedded for), the plain vector index search
+		// - exact: few chunks, their distance is calculated for all of them, driven by the normal indexes
+		// - post: many chunks (or not known fast enough), the vector index search for more candidates, then filtered
+		// "exact" runs under a short limit of its own and falls back to "post", whose cost does not depend on the filter.
 		$where = [];
-		if ($app) $where[] = $this->db->expression(self::TABLE, [self::EMBEDDING_APP => $app]);
-		// the app's own filters as a join - see appFilterJoin(). The id-list is the fallback for the
-		// apps and storages that cannot express themselves as a mergeable sub-query.
-		$from = self::TABLE.self::appFilterJoin($app_filter, self::TABLE.'.'.self::EMBEDDING_APP_ID);
-		if ($app_ids) $where[] = self::TABLE.'.'.self::EMBEDDING_APP_ID.' IN ('.implode(',', array_map('intval', $app_ids)).')';
+		if ($app && $this->appNarrows($app)) $where[] = $this->db->expression(self::TABLE, [self::EMBEDDING_APP => $app]);
+		if ($app_ids) $where[] = self::EMBEDDING_APP_ID.' IN ('.implode(',', array_map('intval', $app_ids)).')';
+		$filtered = $where || $app_filter;
 
-		// k-nearest chunks: MariaDB only uses the vector index for exactly this shape, ORDER BY the distance function
-		// (with the distance the index was built with) ASC plus a LIMIT, therefore the entry level grouping,
-		// the max. distance and the requested order are applied outside
 		$k = min(max(500, 5 * ($start + $num_rows)), 10000);
-		$knn = 'SELECT '.self::EMBEDDING_APP.','.self::EMBEDDING_APP_ID.','.self::EMBEDDING_MODIFIED.
-			',VEC_DISTANCE_COSINE('.self::EMBEDDING.', '.$this->db->quote($response[0]->embedding, 'vector').') AS distance'.
-			' FROM '.$from.($where ? ' WHERE '.implode(' AND ', $where) : '').
-			' ORDER BY distance LIMIT '.$k;
-		// best chunk per entry, so every entry counts once for LIMIT and total
-		$entries = 'SELECT '.self::EMBEDDING_APP.','.self::EMBEDDING_APP_ID.',MIN(distance) AS distance,MAX('.self::EMBEDDING_MODIFIED.') AS modified'.
-			' FROM ('.$knn.') knn WHERE distance < '.(float)$max_distance.
-			' GROUP BY '.self::EMBEDDING_APP.','.self::EMBEDDING_APP_ID;
+		$chunks = $filtered ? $this->filteredChunks($where, $app, $app_ids, $app_filter) : null;
+		$plans = !$filtered ? ['none'] : (isset($chunks) && $chunks <= self::$exact_max_chunks ? ['exact', 'post'] : ['post']);
+		$embedding = $this->db->quote($response[0]->embedding, 'vector');
 
 		$cols = ['entries.*'];
 		$join = '';
@@ -1504,32 +1656,27 @@ class Embedding
 		}
 		// FOUND_ROWS() reports the last query run, and readEntry() below runs one for every row without
 		// a fulltext title - so the rows have to be collected and the total read before any of those
-		$rows = [];
-		try {
-			foreach($this->db->query(self::timeLimited('SELECT SQL_CALC_FOUND_ROWS '.implode(',', $cols).' FROM ('.$entries.') entries'.$join.
-				' ORDER BY '.self::validateOrder($order, 'distance')), __LINE__, __FILE__, $start, $num_rows) as $row)
-			{
-				$rows[] = $row;
-			}
-		}
-		catch (\Throwable $e) {
-			// a scoped search that runs into the limit falls back to the unscoped one: that is what it
-			// did before there was a join, so this can never be worse than not having tried
-			if (!$app_filter || !self::isTimeout($e)) throw $e;
-			// NOT the original exception: a Db exception's message carries the whole statement, which
-			// here contains the list's filter values, and logError() persists it to a config an admin
-			// reads. The fact that it timed out is all anyone can act on.
-			self::logError(new \Exception('scoped search exceeded '.self::$search_timeout.'s, fell back to the unscoped one',
-				$e->getCode()), $app, false, ['app_filter' => true]);
-			// without the limit: we are already over budget, and the unscoped search is the one that
-			// ran before there was a join - retrying it under the same limit would only fail again
-			$timeout = self::$search_timeout;
-			self::$search_timeout = 0;
+		foreach($plans as $n => $plan)
+		{
+			$rows = [];
 			try {
-				return $this->searchEmbeddings($pattern, $app, $start, $num_rows, $return_all, $order, $max_distance);
+				$entries = $this->knnEntries($plan, $embedding, $k, $where, $app_filter, $chunks, (float)$max_distance);
+				// the exact plan gets a short limit, so falling back to "post" still leaves time for it
+				foreach($this->db->query(self::timeLimited('SELECT SQL_CALC_FOUND_ROWS '.implode(',', $cols).' FROM ('.$entries.') entries'.$join.
+					' ORDER BY '.self::validateOrder($order, 'distance'), $plan === 'exact' ? self::EXACT_TIMEOUT : null),
+					__LINE__, __FILE__, $start, $num_rows) as $row)
+				{
+					$rows[] = $row;
+				}
+				$this->plan = $plan;
+				break;
 			}
-			finally {
-				self::$search_timeout = $timeout;
+			catch (\Throwable $e) {
+				if (!isset($plans[$n+1]) || !self::isTimeout($e)) throw $e;
+				// NOT the original exception: a Db exception's message carries the whole statement, which
+				// here contains the list's filter values, and logError() persists it to a config an admin reads
+				self::logError(new \Exception("exact search of $chunks chunks exceeded ".self::EXACT_TIMEOUT.'s, fell back to filtering the nearest ones',
+					$e->getCode()), $app, false, ['app_filter' => (bool)$app_filter]);
 			}
 		}
 		$this->total = (int)$this->db->query('SELECT FOUND_ROWS()')->fetchColumn();
@@ -1772,16 +1919,9 @@ class Embedding
 			// see searchEmbeddings(): the exception's message is the whole statement
 			self::logError(new \Exception('scoped search exceeded '.self::$search_timeout.'s, fell back to the unscoped one',
 				$e->getCode()), $app, true, ['app_filter' => true]);
-			// see searchEmbeddings(): the fallback must not run into the same limit
-			$timeout = self::$search_timeout;
-			self::$search_timeout = 0;
-			try {
-				return $this->searchFulltext($pattern_in, $app, $start, $num_rows, $return_all, $order,
-					$min_relevance_in, $mode, null, $require_all);
-			}
-			finally {
-				self::$search_timeout = $timeout;
-			}
+			// under the same limit: without one, a user waited minutes - or into the web server's gateway timeout
+			return $this->searchFulltext($pattern_in, $app, $start, $num_rows, $return_all, $order,
+				$min_relevance_in, $mode, null, $require_all);
 		}
 		if (self::$log_level)
 		{
