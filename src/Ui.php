@@ -93,6 +93,7 @@ class Ui
 		}
 		try
 		{
+			$this->embedding->timings = [];
 			foreach ($this->embedding->$search($query['search'], $query['col_filter']['apps'] ?? '',
 				// simple approach without storing a state:
 				0,  // we always start at 0, as we don't know how many rows the acl-filter will throw out
@@ -124,7 +125,7 @@ class Ui
 			if (Embedding::isTimeout($e))
 			{
 				Api\Json\Response::get()->message(lang('The search took longer than %1 seconds and was stopped. Admin > RAG > Diagnostics shows if the vector index is used.',
-					Api\Config::read('rag')['search_timeout'] ?? 10), 'error');
+					Api\Config::read('rag')['search_timeout'] ?? 10).$this->searchSteps(), 'error');
 				return 0;
 			}
 			// everything else as before, with all its details - the exception handler answers with the
@@ -268,5 +269,26 @@ class Ui
 				'group' => $group=0,
 			],
 		];
+	}
+
+	/**
+	 * Route and time per step of the last search, to append to its timeout message
+	 *
+	 * Says which part of a search was slow: embedding the query, counting what the filters leave, one of the routes
+	 * of Embedding::searchEmbeddings() or the fulltext search - and, by naming a route at all, that the installed
+	 * code has them.
+	 *
+	 * @return string '' if nothing was timed
+	 */
+	protected function searchSteps() : string
+	{
+		if (!$this->embedding->timings) return '';
+
+		$steps = [];
+		foreach($this->embedding->timings as $step => $value)
+		{
+			$steps[] = $step.': '.(is_float($value) ? sprintf('%.2fs', $value) : $value);
+		}
+		return "\n\n".lang('Route').': '.($this->embedding->plan ?? '-')."\n".implode("\n", $steps);
 	}
 }

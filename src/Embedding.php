@@ -1406,6 +1406,36 @@ class Embedding
 	public ?string $plan = null;
 
 	/**
+	 * Seconds per step of the searches since the last reset, eg. ["query embedding" => 0.12, "none" => 0.4]
+	 *
+	 * The caller resets it (Ui::get_rows()), as a hybrid search runs several searches; a step that failed
+	 * is marked, see timed().
+	 */
+	public array $timings = [];
+
+	/**
+	 * Run one step of a search and record how long it took in $this->timings, also when it fails
+	 *
+	 * @param string $step
+	 * @param callable $fn
+	 * @return mixed what $fn returns
+	 * @throws \Throwable what $fn throws
+	 */
+	protected function timed(string $step, callable $fn)
+	{
+		$start = microtime(true);
+		try {
+			$result = $fn();
+			$this->timings[$step] = round(microtime(true) - $start, 3);
+			return $result;
+		}
+		catch (\Throwable $e) {
+			$this->timings[$step.' ('.(self::isTimeout($e) ? 'limit reached' : 'failed').')'] = round(microtime(true) - $start, 3);
+			throw $e;
+		}
+	}
+
+	/**
 	 * Seconds the exact search may take, before the nearest chunks are filtered instead
 	 */
 	const EXACT_TIMEOUT = 2.0;
@@ -1603,6 +1633,7 @@ class Embedding
 	                                 ?string $app_filter=null) : array
 	{
 		$max_distance ??= self::$max_distance;
+		$this->plan = null;
 		// a sub-query scopes ONE app's entries, it must never be joined onto a multi-app or global search
 		if (!is_string($app) || $app === '' || !self::validFilterSubquery($app_filter)) $app_filter = null;
 		if (isset($app_filter)) $app_ids = null;     // same intent, applying both only costs
@@ -1616,7 +1647,7 @@ class Embedding
 		}
 		try {
 			// the user waits for this one: the same limit as the queries, instead of the web server's gateway timeout
-			$response = $this->create([$pattern], self::$search_timeout);
+			$response = $this->timed('query embedding', fn() => $this->create([$pattern], self::$search_timeout));
 		}
 		catch (\Exception $e) {
 			_egw_log_exception($e);
@@ -1640,7 +1671,8 @@ class Embedding
 		$filtered = $where || $app_filter;
 
 		$k = min(max(500, 5 * ($start + $num_rows)), 10000);
-		$chunks = $filtered ? $this->filteredChunks($where, $app, $app_ids, $app_filter) : null;
+		$chunks = $filtered ? $this->timed('count', fn() => $this->filteredChunks($where, $app, $app_ids, $app_filter)) : null;
+		if ($filtered) $this->timings['chunks left by the filters'] = $chunks ?? 'not counted in time';
 		$plans = !$filtered ? ['none'] : (isset($chunks) && $chunks <= self::$exact_max_chunks ? ['exact', 'post'] : ['post']);
 		$embedding = $this->db->quote($response[0]->embedding, 'vector');
 
@@ -1660,15 +1692,19 @@ class Embedding
 		{
 			$rows = [];
 			try {
+				// the route tried, so a timeout still tells which one it was
+				$this->plan = $plan;
 				$entries = $this->knnEntries($plan, $embedding, $k, $where, $app_filter, $chunks, (float)$max_distance);
 				// the exact plan gets a short limit, so falling back to "post" still leaves time for it
-				foreach($this->db->query(self::timeLimited('SELECT SQL_CALC_FOUND_ROWS '.implode(',', $cols).' FROM ('.$entries.') entries'.$join.
-					' ORDER BY '.self::validateOrder($order, 'distance'), $plan === 'exact' ? self::EXACT_TIMEOUT : null),
-					__LINE__, __FILE__, $start, $num_rows) as $row)
+				$this->timed('route '.$plan, function() use (&$rows, $cols, $entries, $join, $order, $plan, $start, $num_rows)
 				{
-					$rows[] = $row;
-				}
-				$this->plan = $plan;
+					foreach($this->db->query(self::timeLimited('SELECT SQL_CALC_FOUND_ROWS '.implode(',', $cols).' FROM ('.$entries.') entries'.$join.
+						' ORDER BY '.self::validateOrder($order, 'distance'), $plan === 'exact' ? self::EXACT_TIMEOUT : null),
+						__LINE__, __FILE__, $start, $num_rows) as $row)
+					{
+						$rows[] = $row;
+					}
+				});
 				break;
 			}
 			catch (\Throwable $e) {
@@ -1881,8 +1917,9 @@ class Embedding
 					' AND '.self::FULLTEXT_TABLE.'.'.self::FULLTEXT_PART."=''";
 			}
 			$id_relevance = [];
-			foreach ($this->db->query(self::timeLimited('SELECT SQL_CALC_FOUND_ROWS '.implode(',', $cols).' FROM ('.$entries.') entries'.$join.
-				' ORDER BY '.$order), __LINE__, __FILE__, $start, $num_rows) as $row)
+			$fulltext = $this->timed('fulltext', fn() => $this->db->query(self::timeLimited('SELECT SQL_CALC_FOUND_ROWS '.implode(',', $cols).
+				' FROM ('.$entries.') entries'.$join.' ORDER BY '.$order), __LINE__, __FILE__, $start, $num_rows));
+			foreach ($fulltext as $row)
 			{
 				$id = $app && is_string($app) ? (int)$row[self::FULLTEXT_APP_ID] : $row[self::FULLTEXT_APP] . ':' . $row[self::FULLTEXT_APP_ID];
 				$id_relevance[$id] = $return_all ? [

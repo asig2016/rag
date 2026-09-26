@@ -26,6 +26,7 @@ rag / semantic search	rag	el	RAG / Σημασιολογική αναζήτηση
 rag search	rag	el	Αναζήτηση RAG
 rag search only	rag	el	Μόνο αναζήτηση RAG
 raise the cache now, as a database administrator	rag	el	Αυξήστε το cache τώρα, ως διαχειριστής της βάσης δεδομένων
+route	rag	el	Διαδρομή
 run the same rag search twice: the first one loads the index into the cache and can still be slow, the second should answer within a second.	rag	el	Εκτελέστε την ίδια αναζήτηση RAG δύο φορές: η πρώτη φορτώνει το ευρετήριο στο cache και μπορεί να είναι ακόμη αργή, η δεύτερη θα πρέπει να απαντήσει σε λιγότερο από ένα δευτερόλεπτο.
 search in which applications	rag	el	Αναζήτηση σε ποιες εφαρμογές
 searching ...	rag	el	Αναζήτηση σε εξέλιξη ...

@@ -112,6 +112,7 @@ rerank endpoint %1 refuses a document of %2 characters, as every search sends: %
 reranking	rag	de	Reranking
 reranking the best matches (optional)	rag	de	Nachsortieren der besten Treffer (optional)
 result	rag	de	Ergebnis
+route	rag	de	Weg
 run all checks	rag	de	Alle Prüfungen ausführen
 run it again to index the next batch, or save the configuration to let the async job do it.	rag	de	Erneut ausführen für den nächsten Stapel, oder die Konfiguration speichern, damit der asynchrone Job das übernimmt.
 run search	rag	de	Suche ausführen

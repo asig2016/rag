@@ -112,6 +112,7 @@ rerank endpoint %1 refuses a document of %2 characters, as every search sends: %
 reranking	rag	en	Reranking
 reranking the best matches (optional)	rag	en	Reranking the best matches (optional)
 result	rag	en	Result
+route	rag	en	Route
 run all checks	rag	en	Run all checks
 run it again to index the next batch, or save the configuration to let the async job do it.	rag	en	Run it again to index the next batch, or save the configuration to let the async job do it.
 run search	rag	en	Run search
