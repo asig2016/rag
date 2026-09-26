@@ -15,6 +15,7 @@ use EGroupware\Api;
 use EGroupware\Api\Db\Exception\InvalidSql;
 use OpenAI;
 use Symfony\Component\HttpClient\HttpClient;
+use Symfony\Component\HttpClient\Psr18Client;
 
 require_once __DIR__.'/../vendor/autoload.php';
 
@@ -197,6 +198,34 @@ class Embedding
 		$this->db = $GLOBALS['egw']->db;
 		self::$log_level = $log_level;
 	}
+
+	/**
+	 * Client for the embedding endpoint that gives up after $timeout seconds
+	 *
+	 * The search embeds its query while the user waits. The default client waits forever, so an
+	 * endpoint busy with the async job's batches kept the search until the web server's gateway
+	 * timeout (504). Batches of the async job keep using the default client: they may take long.
+	 *
+	 * @param float $timeout seconds
+	 * @return \OpenAI\Client
+	 */
+	protected function timeLimitedClient(float $timeout) : \OpenAI\Client
+	{
+		if (!isset($this->time_limited_client[(string)$timeout]))
+		{
+			$factory = Openai::factory()->withHttpClient(new Psr18Client(
+				HttpClient::create(['timeout' => $timeout, 'max_duration' => $timeout])));
+			if (self::$url) $factory->withBaseUri(self::$url);
+			if (self::$api_key) $factory->withApiKey(self::$api_key);
+			$this->time_limited_client[(string)$timeout] = $factory->make();
+		}
+		return $this->time_limited_client[(string)$timeout];
+	}
+
+	/**
+	 * @var \OpenAI\Client[] timeout => client, see timeLimitedClient()
+	 */
+	protected array $time_limited_client = [];
 
 	/**
 	 * Test configuration
@@ -514,12 +543,14 @@ class Embedding
 	 * Identical chunks are only returned once, so the result can have fewer elements than $chunks.
 	 *
 	 * @param string[] $chunks array of utf-8 strings
+	 * @param ?float $timeout seconds to wait for the endpoint, default null: no limit
 	 * @return object[] objects with attributes n (key in $chunks), sha256, chunk and embedding,
 	 *  plus app, app_id and id, if the embedding was found in egw_rag, or cached=true, if found in egw_rag_cache
 	 * @throws \Exception
 	 */
-	public function create(array $chunks) : array
+	public function create(array $chunks, ?float $timeout=null) : array
 	{
+		$client = $timeout > 0 ? $this->timeLimitedClient($timeout) : $this->client;
 		if (!$chunks) return [];    // otherwise we start a query for rag_hash IS NULL
 		$responses = [];
 		foreach($chunks as $n => $chunk)
@@ -566,7 +597,7 @@ class Embedding
 		{
 			$input = array_map(static fn($sha256) => $responses[$sha256]->chunk, $pending);
 			try {
-				$response = $this->client->embeddings()->create([
+				$response = $client->embeddings()->create([
 					'model' => self::$model,
 					'input' => $input,
 				]);
@@ -576,7 +607,7 @@ class Embedding
 				// fix invalid utf-8 characters by replacing them BEFORE calculating the embeddings
 				if (str_starts_with($e->getMessage(), 'Malformed UTF-8 characters, possibly incorrectly encoded'))
 				{
-					$response = $this->client->embeddings()->create([
+					$response = $client->embeddings()->create([
 						'model' => self::$model,
 						'input' => json_decode(json_encode($input, JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR), true),
 					]);
@@ -1429,7 +1460,8 @@ class Embedding
 			$pattern = preg_replace(self::BOOLEAN_MODE_OPERATORS_PREG, ' ', $pattern);
 		}
 		try {
-			$response = $this->create([$pattern]);
+			// the user waits for this one: the same limit as the queries, instead of the web server's gateway timeout
+			$response = $this->create([$pattern], self::$search_timeout);
 		}
 		catch (\Exception $e) {
 			_egw_log_exception($e);

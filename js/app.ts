@@ -95,15 +95,23 @@ class RagApp extends EgwApp
 		this.egw.loading_prompt('rag-search', true, this.egw.lang('Searching ...'), node);
 
 		const fallback = setTimeout(() => this.searchDone?.(), 300000);
+		// an HTTP error (eg. the web server's 504 gateway timeout) never reaches the list, and egw_json only
+		// shows it: end the spinner once the rows request is finished at all, whatever it returned
+		const requests = typeof PerformanceObserver === 'function' ? new PerformanceObserver((list) =>
+		{
+			if (list.getEntries().some(entry => entry.name.includes('ajax_get_rows'))) done();
+		}) : null;
 		const done = () =>
 		{
 			clearTimeout(fallback);
+			requests?.disconnect();
 			node.removeEventListener('et2-search-result', done);
 			this.egw.loading_prompt('rag-search', false);
 			if (this.searchDone === done) this.searchDone = null;
 		};
 		this.searchDone = done;
 		node.addEventListener('et2-search-result', done);
+		requests?.observe({type: 'resource'});
 	}
 
 	/**
