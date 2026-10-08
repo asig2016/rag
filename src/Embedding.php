@@ -458,7 +458,16 @@ class Embedding
 	}
 
 	/**
+	 * @var array app:id => hook data of the entries added or updated in this request, embedded after the response
+	 */
+	protected static array $deferred = [];
+
+	/**
 	 * Callback for hook "notify-all" to enable embedding (on new/updated entries) and remove embeddings of deleted entries
+	 *
+	 * A new or updated entry is embedded AFTER the response (embedDeferred() via Api\Egw::on_shutdown, which runs
+	 * after fastcgi_finish_request()): the embedding host can take seconds, on a slow one minutes, and the user's
+	 * save must not wait for it. Deleting the embeddings of a deleted entry stays immediate - it is a plain DELETE.
 	 *
 	 * @param array $data
 	 * @return void
@@ -491,8 +500,27 @@ class Embedding
 				// ignore, MariaDB is probably not 11.8, or table not installed
 			}
 		}
-		// install the async job for added or updated entries, if directly adding them failed
+		// added or updated entries: embedded after the response, once per entry however often it was saved
 		elseif ($data['type'] !== 'delete')
+		{
+			if (!self::$deferred)
+			{
+				Api\Egw::on_shutdown([self::class, 'embedDeferred']);
+			}
+			self::$deferred[$data['app'].':'.($data['id'] ?? '')] = $data;
+		}
+	}
+
+	/**
+	 * Embed the entries notify() collected - on shutdown, after the response went out
+	 *
+	 * The async job is installed when directly adding them failed, as before.
+	 */
+	public static function embedDeferred() : void
+	{
+		$deferred = self::$deferred;
+		self::$deferred = [];
+		foreach ($deferred as $data)
 		{
 			try {
 				$rag = new self;
